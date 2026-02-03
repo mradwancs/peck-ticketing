@@ -380,6 +380,8 @@ export default function MyTicketsPage() {
       borderRadius: 10,
       padding: 12,
       background: "#fff", // keep card color stable
+      color: "#111",
+      opacity: 1,
     };
 
     const assignmentBadgeStyle: React.CSSProperties = isMine
