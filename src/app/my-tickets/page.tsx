@@ -73,6 +73,12 @@ export default function MyTicketsPage() {
   const isStaff = useMemo(() => role === "tech" || role === "admin", [role]);
   const isTech = useMemo(() => role === "tech", [role]);
 
+  const isNarrow = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(max-width: 640px)").matches;
+  }, []);
+
+
   const [tickets, setTickets] = useState<TicketRow[]>([]);
 
   const [error, setError] = useState<string | null>(null);
@@ -602,7 +608,7 @@ export default function MyTicketsPage() {
             style={{ padding: 10, minHeight: 90 }}
           />
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr", gap: 10 }}>
             <input
               value={location}
               onChange={(e) => setLocation(e.target.value)}
@@ -623,7 +629,7 @@ export default function MyTicketsPage() {
             </select>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr", gap: 10 }}>
             <select value={priority} onChange={(e) => setPriority(e.target.value)} style={{
                  padding: 10,
                  color: priority ? "#000" : "#9ca3af", // grey when placeholder
