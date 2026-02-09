@@ -50,35 +50,14 @@ export default function LoginPage() {
     }
   }
 
-  async function doSignUp() {
-    setBusy(true);
+  function goToCreateAccount() {
     setError(null);
+    router.push("/create-account");
+  }
 
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-      });
-      if (error) throw error;
-
-      // With confirm email OFF, you usually get a session immediately,
-      // but we handle the fallback just in case.
-      let userId = data.session?.user?.id;
-
-      if (!userId) {
-        const { data: userData, error: userErr } = await supabase.auth.getUser();
-        if (userErr) throw userErr;
-        userId = userData.user?.id ?? null;
-      }
-
-      if (!userId) throw new Error("Account created, but no user session found.");
-
-      await routeAfterAuth(userId);
-    } catch (err: any) {
-      setError(err?.message ?? "Sign up failed.");
-    } finally {
-      setBusy(false);
-    }
+  function goToForgotPassword() {
+    setError(null);
+    router.push("/forgot-password");
   }
 
   return (
@@ -99,7 +78,7 @@ export default function LoginPage() {
 
         <input
           type="password"
-          placeholder="Password (6+ chars)"
+          placeholder="Password"
           value={password}
           autoComplete="current-password"
           onChange={(e) => setPassword(e.target.value)}
@@ -112,20 +91,35 @@ export default function LoginPage() {
           onClick={doSignIn}
           style={{ padding: 10 }}
         >
-          Sign in
+          {busy ? "Signing in..." : "Sign in"}
         </button>
 
         <button
           type="button"
-          disabled={busy || !email.trim() || password.length < 6}
-          onClick={doSignUp}
+          disabled={busy}
+          onClick={goToCreateAccount}
           style={{ padding: 10 }}
         >
           Create account
+        </button>
+
+        <button
+          type="button"
+          disabled={busy}
+          onClick={goToForgotPassword}
+          style={{
+            padding: 10,
+            background: "transparent",
+            border: "none",
+            textDecoration: "underline",
+            cursor: "pointer",
+          }}
+        >
+          Forgot password?
         </button>
 
         {error && <p>{error}</p>}
       </div>
     </div>
   );
-}
+}   
