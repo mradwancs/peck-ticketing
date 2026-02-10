@@ -96,7 +96,7 @@ export default function ChangePasswordPage() {
     <div style={{ padding: 16, maxWidth: 420 }}>
       <h1 style={{ fontSize: 22, fontWeight: 700 }}>Change your password</h1>
       <p style={{ marginTop: 8 }}>
-        This is required on your first sign-in.
+        This is required as you've requested a password reset. Please choose a new password to continue.
       </p>
 
       <form onSubmit={onSubmit} style={{ marginTop: 16, display: "grid", gap: 12 }}>
