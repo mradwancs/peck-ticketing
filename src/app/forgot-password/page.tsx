@@ -10,26 +10,26 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sent, setSent] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
-  async function sendResetEmail() {
+  async function submitRequest() {
     setBusy(true);
     setError(null);
 
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(
-        email.trim(),
-        {
-          redirectTo: `${window.location.origin}/reset-password`,
-        }
-      );
+      const cleanEmail = email.trim().toLowerCase();
+      if (!cleanEmail) throw new Error("Email is required.");
+
+      const { data, error } = await supabase.rpc("request_password_reset", {
+        p_email: cleanEmail,
+      });
 
       if (error) throw error;
 
-      // Always show success to avoid email enumeration
-      setSent(true);
+      // data is the created/reused ticket id (uuid). We don't need to display it to the user.
+      setSubmitted(true);
     } catch (err: any) {
-      setError(err?.message ?? "Failed to send reset email.");
+      setError(err?.message ?? "Failed to submit request.");
     } finally {
       setBusy(false);
     }
@@ -42,26 +42,25 @@ export default function ForgotPasswordPage() {
   return (
     <div style={{ maxWidth: 420, margin: "40px auto", padding: 16 }}>
       <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>
-        Reset password
+        Forgot password
       </h1>
 
-      {sent ? (
-        <>
-          <p style={{ marginBottom: 16 }}>
-            If an account exists for that email, a password reset link has been
-            sent.
+      {submitted ? (
+        <div style={{ display: "grid", gap: 10 }}>
+          <p style={{ margin: 0 }}>
+            Request sent to IT. You’ll receive instructions soon.
           </p>
 
-          <button
-            type="button"
-            onClick={goBack}
-            style={{ padding: 10 }}
-          >
+          <button type="button" onClick={goBack} style={{ padding: 10 }}>
             Back to login
           </button>
-        </>
+        </div>
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
+          <p style={{ margin: 0 }}>
+            Enter your email. This will send a password reset request to IT.
+          </p>
+
           <input
             type="email"
             placeholder="Email"
@@ -74,10 +73,10 @@ export default function ForgotPasswordPage() {
           <button
             type="button"
             disabled={busy || !email.trim()}
-            onClick={sendResetEmail}
+            onClick={submitRequest}
             style={{ padding: 10 }}
           >
-            {busy ? "Sending..." : "Send reset link"}
+            {busy ? "Submitting..." : "Submit request"}
           </button>
 
           <button
