@@ -18,8 +18,8 @@ type TicketRow = {
   updated_at: string;
   closed_at: string | null;
 
-  requester?: { email: string | null } | null;
-  assignee?: { email: string | null } | null;
+  requester?: { email: string | null; full_name: string | null } | null;
+  assignee?: { email: string | null; full_name: string | null } | null;
 };
 
 type ProfileRow = {
@@ -30,6 +30,16 @@ type ProfileRow = {
 function emailToName(email: string) {
   const left = email.split("@")[0] ?? email;
   return left.replace(/[._-]+/g, " ").trim();
+}
+
+function displayNameFromProfile(p?: { full_name: string | null; email: string | null } | null) {
+  const full = (p?.full_name ?? "").trim();
+  if (full) return full;
+
+  const em = (p?.email ?? "").trim();
+  if (em) return emailToName(em);
+
+  return null;
 }
 
 function statusBadgeStyle(status: string): React.CSSProperties {
@@ -78,7 +88,6 @@ export default function MyTicketsPage() {
     return window.matchMedia("(max-width: 640px)").matches;
   }, []);
 
-
   const [tickets, setTickets] = useState<TicketRow[]>([]);
 
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +100,7 @@ export default function MyTicketsPage() {
   const [resolvedOpen, setResolvedOpen] = useState(false);
 
   // Map of profileId -> email (for cases where RLS blocks joins, e.g., teachers seeing assignee)
-  const [emailsById, setEmailsById] = useState<Record<string, string>>({});
+  const [profileById, setProfileById] = useState<Record<string, { email: string | null; full_name: string | null }>>({});
 
   // Create form
   const [title, setTitle] = useState("");
@@ -146,12 +155,13 @@ export default function MyTicketsPage() {
 
     if (error || !data) return;
 
-    const map: Record<string, string> = {};
-    for (const row of data as Array<{ id: string; email: string }>) {
-      if (row?.id && row?.email) map[row.id] = row.email;
+    const map: Record<string, { email: string | null; full_name: string | null }> = {};
+    for (const row of data as Array<{ id: string; email: string | null; full_name: string | null }>) {
+        if (!row?.id) continue;
+        map[row.id] = { email: row.email ?? null, full_name: row.full_name ?? null };
     }
 
-    setEmailsById((prev) => ({ ...prev, ...map }));
+    setProfileById((prev) => ({ ...prev, ...map }));
   }
 
   async function loadTickets() {
@@ -165,8 +175,8 @@ export default function MyTicketsPage() {
           `
           id,title,description,location,category,status,priority,
           requester_id,assigned_to,created_at,updated_at,closed_at,
-          requester:requester_id(email),
-          assignee:assigned_to(email)
+          requester:requester_id(email, full_name),
+          assignee:assigned_to(email, full_name)
         `
         )
         .order("created_at", { ascending: false })
@@ -179,7 +189,8 @@ export default function MyTicketsPage() {
 
       // If a teacher can't read assignee profiles, assignee join may be null.
       // Resolve assignee emails per-ticket using the safe RPC.
-      const needsResolve = rows.filter((t) => t.assigned_to && !t.assignee?.email && !emailsById[t.assigned_to]);
+      const needsResolve = rows.filter((t) => t.assigned_to && !t.assignee?.email && !profileById[t.assigned_to]);
+
       await Promise.all(needsResolve.map((t) => resolveEmailsForTicket(t.id, [t.assigned_to!])));
     } catch (err: any) {
       setError(err?.message ?? "Failed to load tickets.");
@@ -252,8 +263,8 @@ export default function MyTicketsPage() {
       setTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, assigned_to: userId } : t)));
       setActionNotice("Assigned to you.");
 
-      // ensure we can display assignee name immediately
-      if (!emailsById[userId]) {
+      // ensure we can display assignee name immediately (fallback via email if needed)
+      if (!profileById[userId]) {
         await resolveEmailsForTicket(ticketId, [userId]);
       }
     } catch (err: any) {
@@ -301,9 +312,11 @@ export default function MyTicketsPage() {
   }
 
   async function changeStatus(ticketId: string, newStatus: string) {
-    if (newStatus === "resolved"){
-        const ok = confirm("Are you sure you want to mark this ticket as resolved? \n\n This action CANNOT be undone. \n\n Please make absolutely sure that this ticket is resolved.");
-        if (!ok) return;
+    if (newStatus === "resolved") {
+      const ok = confirm(
+        "Are you sure you want to mark this ticket as resolved? \n\n This action CANNOT be undone. \n\n Please make absolutely sure that this ticket is resolved."
+      );
+      if (!ok) return;
     }
     setError(null);
     setActionNotice(null);
@@ -359,15 +372,29 @@ export default function MyTicketsPage() {
   }, [tickets]);
 
   function TicketCard({ t }: { t: TicketRow }) {
-    const requesterEmail = t.requester?.email ?? null;
-    const requesterLabel = requesterEmail ? emailToName(requesterEmail) : t.requester_id;
+    // Requester label: full_name > email-derived > requester_id
+    const requesterDisplay = displayNameFromProfile(t.requester);
+    const requesterLabel = requesterDisplay ?? t.requester_id;
 
-    const assigneeEmail = t.assignee?.email ?? (t.assigned_to ? emailsById[t.assigned_to] ?? null : null);
+    // Assignee label: prefer joined full_name/email; fallback to RPC-resolved full_name/email; fallback to id
+    const assigneeJoinedDisplay = displayNameFromProfile(t.assignee);
+
+    const fallbackProfile = t.assigned_to ? profileById[t.assigned_to] ?? null : null;
+
+    const assigneeEmailFallback = t.assignee?.email ?? fallbackProfile?.email ?? null;
+    const assigneeFallbackName = (fallbackProfile?.full_name ?? "").trim()
+    ? (fallbackProfile?.full_name ?? "").trim()
+    : assigneeEmailFallback
+    ? emailToName(assigneeEmailFallback)
+    : null;
+
     const assigneeLabel = t.assigned_to
-      ? assigneeEmail
-        ? emailToName(assigneeEmail)
-        : t.assigned_to
-      : "Unassigned";
+    ? assigneeJoinedDisplay ?? assigneeFallbackName ?? t.assigned_to
+    : "Unassigned";
+
+    const requesterEmail = t.requester?.email ?? null;
+    const assigneeEmail = t.assignee?.email ?? assigneeEmailFallback;
+
 
     const isMine = !!userId && t.assigned_to === userId;
     const isUnassigned = !t.assigned_to;
@@ -391,20 +418,23 @@ export default function MyTicketsPage() {
       : { background: "#fef9c3", border: "2px solid #ca8a04" }; // yellow (unassigned)
 
     return (
-      <div key={t.id} style={{
+      <div
+        key={t.id}
+        style={{
           ...cardStyle,
           cursor: "pointer",
           transition: "box-shadow 120ms ease, transform 120ms ease",
-         }} onClick={() => router.push(`/tickets/${t.id}`)}
-         onMouseEnter={(e) => {
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)';
-            e.currentTarget.style.transform = 'translateY(-1px)';
-         }}
-         onMouseLeave={(e) => {
-            e.currentTarget.style.boxShadow = 'none';
-            e.currentTarget.style.transform = 'none';
-         }}
-         >
+        }}
+        onClick={() => router.push(`/tickets/${t.id}`)}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.08)";
+          e.currentTarget.style.transform = "translateY(-1px)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.boxShadow = "none";
+          e.currentTarget.style.transform = "none";
+        }}
+      >
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ fontWeight: 900 }}>{t.title}</div>
@@ -617,30 +647,62 @@ export default function MyTicketsPage() {
               placeholder="Room Number/Location (please specify if applicable)"
               style={{ padding: 10 }}
             />
-            <select value={category} onChange={(e) => setCategory(e.target.value)} style={{
-                 padding: 10,
-                 color: category ? "#000" : "#9ca3af", // grey when placeholder
-                }}>
-              <option value='' disabled>Category</option>
-              <option value="Other" style={{ color: "#000" }}>Other</option>
-              <option value="Classroom Tech" style={{ color: "#000" }}>Classroom Tech</option>
-              <option value="Laptop" style={{ color: "#000" }}>Laptop</option>
-              <option value="Internet" style={{ color: "#000" }}>Internet</option>
-              <option value="Printer" style={{ color: "#000" }}>Printer</option>
-              <option value="Account" style={{ color: "#000" }}>Account</option>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              style={{
+                padding: 10,
+                color: category ? "#000" : "#9ca3af", // grey when placeholder
+              }}
+            >
+              <option value="" disabled>
+                Category
+              </option>
+              <option value="Other" style={{ color: "#000" }}>
+                Other
+              </option>
+              <option value="Classroom Tech" style={{ color: "#000" }}>
+                Classroom Tech
+              </option>
+              <option value="Laptop" style={{ color: "#000" }}>
+                Laptop
+              </option>
+              <option value="Internet" style={{ color: "#000" }}>
+                Internet
+              </option>
+              <option value="Printer" style={{ color: "#000" }}>
+                Printer
+              </option>
+              <option value="Account" style={{ color: "#000" }}>
+                Account
+              </option>
             </select>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr", gap: 10 }}>
-            <select value={priority} onChange={(e) => setPriority(e.target.value)} style={{
-                 padding: 10,
-                 color: priority ? "#000" : "#9ca3af", // grey when placeholder
-                }}>
-              <option value='' disabled>Priority</option>
-              <option value="low" style={{ color: "#000" }}>low</option>
-              <option value="normal" style={{ color: "#000" }}>normal</option>
-              <option value="high" style={{ color: "#000" }}>high</option>
-              <option value="urgent" style={{ color: "#000" }}>urgent</option>
+            <select
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+              style={{
+                padding: 10,
+                color: priority ? "#000" : "#9ca3af", // grey when placeholder
+              }}
+            >
+              <option value="" disabled>
+                Priority
+              </option>
+              <option value="low" style={{ color: "#000" }}>
+                low
+              </option>
+              <option value="normal" style={{ color: "#000" }}>
+                normal
+              </option>
+              <option value="high" style={{ color: "#000" }}>
+                high
+              </option>
+              <option value="urgent" style={{ color: "#000" }}>
+                urgent
+              </option>
             </select>
 
             <button
@@ -692,9 +754,7 @@ export default function MyTicketsPage() {
               cursor: "pointer",
             }}
           >
-            <span>
-              Resolved Tickets {loadingTickets ? "(loading…)" : `(${resolvedTickets.length})`}
-            </span>
+            <span>Resolved Tickets {loadingTickets ? "(loading…)" : `(${resolvedTickets.length})`}</span>
             <span style={{ opacity: 0.75 }}>{resolvedOpen ? "▾" : "▸"}</span>
           </button>
 
