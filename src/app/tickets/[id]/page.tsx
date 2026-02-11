@@ -18,8 +18,8 @@ type TicketRow = {
   updated_at: string;
   closed_at: string | null;
 
-  requester?: { email: string | null } | null;
-  assignee?: { email: string | null } | null;
+  requester?: { email: string | null; full_name: string | null } | null;
+  assignee?: { email: string | null; full_name: string | null } | null;
 };
 
 type ProfileRow = {
@@ -33,7 +33,7 @@ type CommentRow = {
   author_id: string;
   body: string;
   created_at: string;
-  author?: { email: string | null } | null;
+  author?: { email: string | null; full_name: string | null } | null;
 };
 
 type EventRow = {
@@ -45,7 +45,7 @@ type EventRow = {
   old_value: string | null;
   new_value: string | null;
   created_at: string;
-  actor?: { email: string | null } | null;
+  actor?: { email: string | null; full_name: string | null } | null;
 };
 
 const STATUS_OPTIONS = ["open", "in_progress", "waiting_on_user", "resolved"] as const;
@@ -55,32 +55,19 @@ function emailToName(email: string) {
   return left.replace(/[._-]+/g, " ").trim();
 }
 
-function formatWho(emailOrId: string | null | undefined) {
-  if (!emailOrId) return "—";
-  return emailOrId.includes("@") ? emailToName(emailOrId) : emailOrId;
+function displayNameFromProfile(p?: { full_name: string | null; email: string | null } | null) {
+  const full = (p?.full_name ?? "").trim();
+  if (full) return full;
+
+  const em = (p?.email ?? "").trim();
+  if (em) return emailToName(em);
+
+  return null;
 }
 
-function formatEvent(e: EventRow) {
-  const oldV = (e.old_value ?? "").trim();
-  const newV = (e.new_value ?? "").trim();
-  const oldLabel = oldV ? oldV : "unassigned";
-  const newLabel = newV ? newV : "unassigned";
-
-  switch (e.event_type) {
-    case "ticket_created":
-      return "Ticket created";
-    case "status_changed":
-      return `Status changed: ${oldV || "—"} → ${newV || "—"}`;
-    case "assigned_changed":
-      return `Assignee changed: ${oldLabel} → ${newLabel}`;
-    case "ticket_closed":
-      return "Ticket closed";
-    default: {
-      const field = e.field_name ? `${e.field_name}: ` : "";
-      if (!oldV && !newV) return `${e.event_type}${field ? ` — ${field}` : ""}`.trim();
-      return `${e.event_type}${field ? ` — ${field}` : ""}: ${oldV || "—"} → ${newV || "—"}`;
-    }
-  }
+function isUuidLike(s: string) {
+  // "good enough" UUID check (keeps this lightweight)
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 }
 
 export default function TicketDetailPage() {
@@ -103,7 +90,11 @@ export default function TicketDetailPage() {
   const [ticket, setTicket] = useState<TicketRow | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [comments, setComments] = useState<CommentRow[]>([]);
-  const [emailsById, setEmailsById] = useState<Record<string, string>>({});
+
+  // profileId -> { email, full_name } (used when joins are blocked + for history old/new mapping)
+  const [profileById, setProfileById] = useState<
+    Record<string, { email: string | null; full_name: string | null }>
+  >({});
 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -139,7 +130,7 @@ export default function TicketDetailPage() {
         .eq("id", user.id)
         .single<ProfileRow>();
 
-      setRole(profileErr ? "user" : (profile?.role ?? "user"));
+      setRole(profileErr ? "user" : profile?.role ?? "user");
       setCheckingAuth(false);
     };
 
@@ -151,7 +142,60 @@ export default function TicketDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checkingAuth]);
 
-  async function resolveEmailsForTicket(allIds: string[]) {
+  function nameFromProfileId(id: string | null | undefined) {
+    if (!id) return null;
+    const p = profileById[id];
+    const full = (p?.full_name ?? "").trim();
+    if (full) return full;
+
+    const em = (p?.email ?? "").trim();
+    if (em) return emailToName(em);
+
+    return null;
+  }
+
+  function formatWhoFromIdOrEmail(value: string | null | undefined) {
+    if (!value) return "—";
+    if (value.includes("@")) return emailToName(value);
+    const byId = nameFromProfileId(value);
+    return byId ?? value; // last-resort: show the id
+  }
+
+  function formatAssigneeValue(raw: string | null | undefined) {
+    const v = (raw ?? "").trim();
+    if (!v) return "unassigned";
+
+    // Old/new values for assigned_changed are usually UUIDs
+    if (isUuidLike(v)) return nameFromProfileId(v) ?? v;
+
+    // If it’s somehow an email:
+    if (v.includes("@")) return emailToName(v);
+
+    return v;
+  }
+
+  function formatEvent(e: EventRow) {
+    const oldV = (e.old_value ?? "").trim();
+    const newV = (e.new_value ?? "").trim();
+
+    switch (e.event_type) {
+      case "ticket_created":
+        return "Ticket created";
+      case "status_changed":
+        return `Status changed: ${oldV || "—"} → ${newV || "—"}`;
+      case "assigned_changed":
+        return `Assignee changed: ${formatAssigneeValue(oldV)} → ${formatAssigneeValue(newV)}`;
+      case "ticket_closed":
+        return "Ticket closed";
+      default: {
+        const field = e.field_name ? `${e.field_name}: ` : "";
+        if (!oldV && !newV) return `${e.event_type}${field ? ` — ${field}` : ""}`.trim();
+        return `${e.event_type}${field ? ` — ${field}` : ""}: ${oldV || "—"} → ${newV || "—"}`;
+      }
+    }
+  }
+
+  async function resolveProfilesForTicket(allIds: string[]) {
     const unique = Array.from(new Set(allIds.filter(Boolean)));
     if (unique.length === 0) return;
 
@@ -162,12 +206,13 @@ export default function TicketDetailPage() {
 
     if (error || !data) return;
 
-    const map: Record<string, string> = {};
-    for (const row of data as Array<{ id: string; email: string }>) {
-      if (row?.id && row?.email) map[row.id] = row.email;
+    const map: Record<string, { email: string | null; full_name: string | null }> = {};
+    for (const row of data as Array<{ id: string; email: string | null; full_name: string | null }>) {
+      if (!row?.id) continue;
+      map[row.id] = { email: row.email ?? null, full_name: row.full_name ?? null };
     }
 
-    setEmailsById((prev) => ({ ...prev, ...map }));
+    setProfileById((prev) => ({ ...prev, ...map }));
   }
 
   async function loadAll() {
@@ -182,8 +227,8 @@ export default function TicketDetailPage() {
           `
           id,title,description,location,category,status,priority,
           requester_id,assigned_to,created_at,updated_at,closed_at,
-          requester:requester_id(email),
-          assignee:assigned_to(email)
+          requester:requester_id(email, full_name),
+          assignee:assigned_to(email, full_name)
         `
         )
         .eq("id", ticketId)
@@ -197,7 +242,7 @@ export default function TicketDetailPage() {
         .select(
           `
           id,ticket_id,actor_id,event_type,field_name,old_value,new_value,created_at,
-          actor:actor_id(email)
+          actor:actor_id(email, full_name)
         `
         )
         .eq("ticket_id", ticketId)
@@ -212,7 +257,7 @@ export default function TicketDetailPage() {
         .select(
           `
           id,ticket_id,author_id,body,created_at,
-          author:author_id(email)
+          author:author_id(email, full_name)
         `
         )
         .eq("ticket_id", ticketId)
@@ -222,14 +267,25 @@ export default function TicketDetailPage() {
       if (commentsErr) throw commentsErr;
       setComments(commentRows ?? []);
 
+      // Also resolve any ids that appear in assigned_changed old/new values
+      const assignedChangeIds: string[] = [];
+      for (const e of eventRows ?? []) {
+        if (e.event_type !== "assigned_changed") continue;
+        const o = (e.old_value ?? "").trim();
+        const n = (e.new_value ?? "").trim();
+        if (o && isUuidLike(o)) assignedChangeIds.push(o);
+        if (n && isUuidLike(n)) assignedChangeIds.push(n);
+      }
+
       const idsToResolve = [
         ...(eventRows ?? []).map((e) => e.actor_id),
         ...(commentRows ?? []).map((c) => c.author_id),
         ticketData.requester_id,
         ...(ticketData.assigned_to ? [ticketData.assigned_to] : []),
+        ...assignedChangeIds,
       ];
 
-      await resolveEmailsForTicket(idsToResolve);
+      await resolveProfilesForTicket(idsToResolve);
     } catch (err: any) {
       setError(err?.message ?? "Failed to load ticket.");
     } finally {
@@ -265,11 +321,10 @@ export default function TicketDetailPage() {
     const allowed = !resolved && (role === "tech" || ticket.requester_id === userId);
 
     if (allowed) {
-        // slight delay avoids focusing before the textarea mounts
-        setTimeout(() => commentRef.current?.focus(), 0);
+      // slight delay avoids focusing before the textarea mounts
+      setTimeout(() => commentRef.current?.focus(), 0);
     }
   }, [ticket?.id, ticket?.status, role, userId]);
-
 
   async function assignToMe() {
     if (!isTech || !ticket || !userId) return;
@@ -345,8 +400,21 @@ export default function TicketDetailPage() {
   if (checkingAuth || loading) return <div style={{ padding: 16 }}>Loading…</div>;
   if (!ticket) return <div style={{ padding: 16 }}>Ticket not found.</div>;
 
-  const requesterEmailOrId = ticket.requester?.email ?? emailsById[ticket.requester_id] ?? ticket.requester_id;
-  const assigneeEmailOrId = ticket.assignee?.email ?? (ticket.assigned_to ? emailsById[ticket.assigned_to] ?? ticket.assigned_to : null);
+  const requesterLabel =
+    displayNameFromProfile(ticket.requester) ??
+    nameFromProfileId(ticket.requester_id) ??
+    ticket.requester_id;
+
+  const assigneeLabel = ticket.assigned_to
+    ? displayNameFromProfile(ticket.assignee) ??
+      nameFromProfileId(ticket.assigned_to) ??
+      ticket.assigned_to
+    : "unassigned";
+
+  const requesterEmail = ticket.requester?.email ?? profileById[ticket.requester_id]?.email ?? null;
+  const assigneeEmail =
+    ticket.assignee?.email ??
+    (ticket.assigned_to ? profileById[ticket.assigned_to]?.email ?? null : null);
 
   const isMine = ticket.assigned_to === userId;
   const isResolved = ticket.status === "resolved";
@@ -364,7 +432,15 @@ export default function TicketDetailPage() {
         ← Back
       </button>
 
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+        }}
+      >
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 800 }}>{ticket.title}</h1>
           <div style={{ marginTop: 6, opacity: 0.85 }}>
@@ -380,9 +456,9 @@ export default function TicketDetailPage() {
 
       <div style={{ marginTop: 10, display: "flex", gap: 12, flexWrap: "wrap", opacity: 0.9 }}>
         {!isResolved ? (
-        <span>
+          <span>
             status: <b>{ticket.status}</b>
-        </span>
+          </span>
         ) : null}
 
         {isResolved ? (
@@ -418,10 +494,10 @@ export default function TicketDetailPage() {
 
       <div style={{ marginTop: 16, display: "flex", gap: 14, flexWrap: "wrap", opacity: 0.9 }}>
         <span>
-          requester: <b>{formatWho(requesterEmailOrId)}</b>
+          requester: <b>{requesterLabel}</b>
         </span>
         <span>
-          assignee: <b>{assigneeEmailOrId ? formatWho(assigneeEmailOrId) : "unassigned"}</b>
+          assignee: <b>{assigneeLabel}</b>
         </span>
         {ticket.location ? (
           <span>
@@ -432,6 +508,18 @@ export default function TicketDetailPage() {
           created: <b>{new Date(ticket.created_at).toLocaleString()}</b>
         </span>
       </div>
+
+      {isStaff && requesterEmail ? (
+        <div style={{ marginTop: 6, opacity: 0.75, fontSize: 12 }}>
+          requester email: <b>{requesterEmail}</b>
+        </div>
+      ) : null}
+
+      {isStaff && assigneeEmail ? (
+        <div style={{ marginTop: 2, opacity: 0.75, fontSize: 12 }}>
+          assignee email: <b>{assigneeEmail}</b>
+        </div>
+      ) : null}
 
       {/* Staff actions (disabled entirely if resolved, per your preference) */}
       {isStaff ? (
@@ -444,15 +532,20 @@ export default function TicketDetailPage() {
             </div>
           ) : isTech ? (
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 10, alignItems: "center" }}>
-            {!isResolved ? (
-              <select value={ticket.status} onChange={(e) => changeStatus(e.target.value)} disabled={updating} style={{ padding: 8 }}>
-                {STATUS_OPTIONS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            ) : null}
+              {!isResolved ? (
+                <select
+                  value={ticket.status}
+                  onChange={(e) => changeStatus(e.target.value)}
+                  disabled={updating}
+                  style={{ padding: 8 }}
+                >
+                  {STATUS_OPTIONS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
 
               {isMine ? (
                 <button onClick={unassignFromMe} disabled={updating}>
@@ -477,12 +570,12 @@ export default function TicketDetailPage() {
         {canComment ? (
           <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
             <textarea
-                ref={commentRef}
-                value={commentBody}
-                onChange={(e) => setCommentBody(e.target.value)}
-                placeholder="Add a comment…"
-                style={{ padding: 10, minHeight: 80 }}
-                disabled={postingComment}
+              ref={commentRef}
+              value={commentBody}
+              onChange={(e) => setCommentBody(e.target.value)}
+              placeholder="Add a comment…"
+              style={{ padding: 10, minHeight: 80 }}
+              disabled={postingComment}
             />
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={postComment} disabled={postingComment || !commentBody.trim()}>
@@ -501,11 +594,15 @@ export default function TicketDetailPage() {
         ) : (
           <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
             {comments.map((c) => {
-              const who = c.author?.email ?? emailsById[c.author_id] ?? c.author_id;
+              const whoLabel =
+                displayNameFromProfile(c.author) ??
+                nameFromProfileId(c.author_id) ??
+                c.author_id;
+
               return (
                 <div key={c.id} style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 800 }}>{formatWho(who)}</div>
+                    <div style={{ fontWeight: 800 }}>{whoLabel}</div>
                     <div style={{ opacity: 0.75, fontSize: 12 }}>{new Date(c.created_at).toLocaleString()}</div>
                   </div>
                   <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{c.body}</div>
@@ -525,11 +622,15 @@ export default function TicketDetailPage() {
         ) : (
           <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
             {events.map((e) => {
-              const who = e.actor?.email ?? emailsById[e.actor_id] ?? e.actor_id;
+              const whoLabel =
+                displayNameFromProfile(e.actor) ??
+                nameFromProfileId(e.actor_id) ??
+                e.actor_id;
+
               return (
                 <div key={e.id} style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 800 }}>{formatWho(who)}</div>
+                    <div style={{ fontWeight: 800 }}>{whoLabel}</div>
                     <div style={{ opacity: 0.75, fontSize: 12 }}>{new Date(e.created_at).toLocaleString()}</div>
                   </div>
                   <div style={{ marginTop: 6 }}>{formatEvent(e)}</div>
