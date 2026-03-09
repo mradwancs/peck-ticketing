@@ -32,7 +32,9 @@ function emailToName(email: string) {
   return left.replace(/[._-]+/g, " ").trim();
 }
 
-function displayNameFromProfile(p?: { full_name: string | null; email: string | null } | null) {
+function displayNameFromProfile(
+  p?: { full_name: string | null; email: string | null } | null
+) {
   const full = (p?.full_name ?? "").trim();
   if (full) return full;
 
@@ -43,25 +45,32 @@ function displayNameFromProfile(p?: { full_name: string | null; email: string | 
 }
 
 function statusBadgeStyle(status: string): React.CSSProperties {
-  // More obvious pills (stronger background + border)
-  if (status === "open") return { background: "#e0f2fe", border: "2px solid #0284c7" };
-  if (status === "in_progress") return { background: "#ffedd5", border: "2px solid #f7fb0f" };
-  if (status === "waiting_on_user") return { background: "#fef9c3", border: "2px solid #ca8a04" };
-  if (status === "resolved") return { background: "#dcfce7", border: "2px solid #16a34a" };
+  if (status === "open")
+    return { background: "#e0f2fe", border: "2px solid #0284c7" };
+  if (status === "in_progress")
+    return { background: "#ffedd5", border: "2px solid #f7fb0f" };
+  if (status === "waiting_on_user")
+    return { background: "#fef9c3", border: "2px solid #ca8a04" };
+  if (status === "resolved")
+    return { background: "#dcfce7", border: "2px solid #16a34a" };
   return { background: "#f3f4f6", border: "2px solid #6b7280" };
 }
 
 function priorityBadgeStyle(priority: string): React.CSSProperties {
-  if (priority === "low") return { background: "#e5e7eb", border: "2px solid #6b7280" };
-  if (priority === "normal") return { background: "#e0f2fe", border: "2px solid #0284c7" };
-  if (priority === "high") return { background: "#ffedd5", border: "2px solid #ea580c" };
-  if (priority === "urgent") return { background: "#fee2e2", border: "2px solid #dc2626" };
+  if (priority === "low")
+    return { background: "#e5e7eb", border: "2px solid #6b7280" };
+  if (priority === "normal")
+    return { background: "#e0f2fe", border: "2px solid #0284c7" };
+  if (priority === "high")
+    return { background: "#ffedd5", border: "2px solid #ea580c" };
+  if (priority === "urgent")
+    return { background: "#fee2e2", border: "2px solid #dc2626" };
   return { background: "#f3f4f6", border: "2px solid #6b7280" };
 }
 
 function resolvedPillOverride(): React.CSSProperties {
   return {
-    background: "#dcfce7", // soft green
+    background: "#dcfce7",
     border: "2px solid #16a34a",
     color: "#166534",
     textDecoration: "line-through",
@@ -96,13 +105,12 @@ export default function MyTicketsPage() {
 
   const [updatingTicketId, setUpdatingTicketId] = useState<string | null>(null);
 
-  // Resolved section collapsed by default
   const [resolvedOpen, setResolvedOpen] = useState(false);
 
-  // Map of profileId -> email (for cases where RLS blocks joins, e.g., teachers seeing assignee)
-  const [profileById, setProfileById] = useState<Record<string, { email: string | null; full_name: string | null }>>({});
+  const [profileById, setProfileById] = useState<
+    Record<string, { email: string | null; full_name: string | null }>
+  >({});
 
-  // Create form
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
@@ -110,12 +118,31 @@ export default function MyTicketsPage() {
   const [priority, setPriority] = useState("");
   const [creating, setCreating] = useState(false);
 
+  const headerButtonStyle: React.CSSProperties = {
+    padding: "10px 14px",
+    borderRadius: 10,
+    border: "1px solid #d1d5db",
+    background: "#ffffff",
+    color: "#111827",
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: "pointer",
+  };
+
+  const signOutButtonStyle: React.CSSProperties = {
+    ...headerButtonStyle,
+    background: "#111827",
+    border: "1px solid #111827",
+    color: "#ffffff",
+  };
+
   useEffect(() => {
     const run = async () => {
       setCheckingAuth(true);
       setError(null);
 
-      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+      const { data: sessionData, error: sessionErr } =
+        await supabase.auth.getSession();
       if (sessionErr) {
         setError(sessionErr.message);
         setCheckingAuth(false);
@@ -155,10 +182,15 @@ export default function MyTicketsPage() {
 
     if (error || !data) return;
 
-    const map: Record<string, { email: string | null; full_name: string | null }> = {};
-    for (const row of data as Array<{ id: string; email: string | null; full_name: string | null }>) {
-        if (!row?.id) continue;
-        map[row.id] = { email: row.email ?? null, full_name: row.full_name ?? null };
+    const map: Record<string, { email: string | null; full_name: string | null }> =
+      {};
+    for (const row of data as Array<{
+      id: string;
+      email: string | null;
+      full_name: string | null;
+    }>) {
+      if (!row?.id) continue;
+      map[row.id] = { email: row.email ?? null, full_name: row.full_name ?? null };
     }
 
     setProfileById((prev) => ({ ...prev, ...map }));
@@ -187,11 +219,16 @@ export default function MyTicketsPage() {
       const rows = data ?? [];
       setTickets(rows);
 
-      // If a teacher can't read assignee profiles, assignee join may be null.
-      // Resolve assignee emails per-ticket using the safe RPC.
-      const needsResolve = rows.filter((t) => t.assigned_to && !t.assignee?.email && !profileById[t.assigned_to]);
+      const needsResolve = rows.filter(
+        (t) =>
+          t.assigned_to &&
+          !t.assignee?.email &&
+          !profileById[t.assigned_to]
+      );
 
-      await Promise.all(needsResolve.map((t) => resolveEmailsForTicket(t.id, [t.assigned_to!])));
+      await Promise.all(
+        needsResolve.map((t) => resolveEmailsForTicket(t.id, [t.assigned_to!]))
+      );
     } catch (err: any) {
       setError(err?.message ?? "Failed to load tickets.");
     } finally {
@@ -257,13 +294,17 @@ export default function MyTicketsPage() {
 
     setUpdatingTicketId(ticketId);
     try {
-      const { error } = await supabase.from("tickets").update({ assigned_to: userId }).eq("id", ticketId);
+      const { error } = await supabase
+        .from("tickets")
+        .update({ assigned_to: userId })
+        .eq("id", ticketId);
       if (error) throw error;
 
-      setTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, assigned_to: userId } : t)));
+      setTickets((prev) =>
+        prev.map((t) => (t.id === ticketId ? { ...t, assigned_to: userId } : t))
+      );
       setActionNotice("Assigned to you.");
 
-      // ensure we can display assignee name immediately (fallback via email if needed)
       if (!profileById[userId]) {
         await resolveEmailsForTicket(ticketId, [userId]);
       }
@@ -299,10 +340,15 @@ export default function MyTicketsPage() {
 
     setUpdatingTicketId(ticketId);
     try {
-      const { error } = await supabase.from("tickets").update({ assigned_to: null }).eq("id", ticketId);
+      const { error } = await supabase
+        .from("tickets")
+        .update({ assigned_to: null })
+        .eq("id", ticketId);
       if (error) throw error;
 
-      setTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, assigned_to: null } : t)));
+      setTickets((prev) =>
+        prev.map((t) => (t.id === ticketId ? { ...t, assigned_to: null } : t))
+      );
       setActionNotice("Unassigned.");
     } catch (err: any) {
       setError(err?.message ?? "Failed to unassign ticket.");
@@ -328,10 +374,15 @@ export default function MyTicketsPage() {
 
     setUpdatingTicketId(ticketId);
     try {
-      const { error } = await supabase.from("tickets").update({ status: newStatus }).eq("id", ticketId);
+      const { error } = await supabase
+        .from("tickets")
+        .update({ status: newStatus })
+        .eq("id", ticketId);
       if (error) throw error;
 
-      setTickets((prev) => prev.map((t) => (t.id === ticketId ? { ...t, status: newStatus } : t)));
+      setTickets((prev) =>
+        prev.map((t) => (t.id === ticketId ? { ...t, status: newStatus } : t))
+      );
       setActionNotice("Status updated.");
     } catch (err: any) {
       setError(err?.message ?? "Failed to update status.");
@@ -345,17 +396,22 @@ export default function MyTicketsPage() {
     router.replace("/login");
   }
 
+  function goToChangePassword() {
+    router.push("/change-password");
+  }
+
   const activeTickets = useMemo(() => {
     const rows = tickets.filter((t) => t.status !== "resolved");
 
-    // Tech view: unassigned first, then newest
     if (isTech) {
       return [...rows].sort((a, b) => {
-        const aUnassigned = a.assigned_to ? 0 : 1; // 1 means unassigned
+        const aUnassigned = a.assigned_to ? 0 : 1;
         const bUnassigned = b.assigned_to ? 0 : 1;
 
         if (aUnassigned !== bUnassigned) return bUnassigned - aUnassigned;
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        return (
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
       });
     }
 
@@ -372,29 +428,27 @@ export default function MyTicketsPage() {
   }, [tickets]);
 
   function TicketCard({ t }: { t: TicketRow }) {
-    // Requester label: full_name > email-derived > requester_id
     const requesterDisplay = displayNameFromProfile(t.requester);
     const requesterLabel = requesterDisplay ?? t.requester_id;
 
-    // Assignee label: prefer joined full_name/email; fallback to RPC-resolved full_name/email; fallback to id
     const assigneeJoinedDisplay = displayNameFromProfile(t.assignee);
 
     const fallbackProfile = t.assigned_to ? profileById[t.assigned_to] ?? null : null;
 
-    const assigneeEmailFallback = t.assignee?.email ?? fallbackProfile?.email ?? null;
+    const assigneeEmailFallback =
+      t.assignee?.email ?? fallbackProfile?.email ?? null;
     const assigneeFallbackName = (fallbackProfile?.full_name ?? "").trim()
-    ? (fallbackProfile?.full_name ?? "").trim()
-    : assigneeEmailFallback
-    ? emailToName(assigneeEmailFallback)
-    : null;
+      ? (fallbackProfile?.full_name ?? "").trim()
+      : assigneeEmailFallback
+      ? emailToName(assigneeEmailFallback)
+      : null;
 
     const assigneeLabel = t.assigned_to
-    ? assigneeJoinedDisplay ?? assigneeFallbackName ?? t.assigned_to
-    : "Unassigned";
+      ? assigneeJoinedDisplay ?? assigneeFallbackName ?? t.assigned_to
+      : "Unassigned";
 
     const requesterEmail = t.requester?.email ?? null;
     const assigneeEmail = t.assignee?.email ?? assigneeEmailFallback;
-
 
     const isMine = !!userId && t.assigned_to === userId;
     const isUnassigned = !t.assigned_to;
@@ -406,16 +460,16 @@ export default function MyTicketsPage() {
       border: "1px solid #ddd",
       borderRadius: 10,
       padding: 12,
-      background: "#fff", // keep card color stable
+      background: "#fff",
       color: "#111",
       opacity: 1,
     };
 
     const assignmentBadgeStyle: React.CSSProperties = isMine
-      ? { background: "#dcfce7", border: "2px solid #16a34a" } // green (assigned to you)
+      ? { background: "#dcfce7", border: "2px solid #16a34a" }
       : isAssignedToOther
-      ? { background: "#dcfce7", border: "2px solid #16a34a" } // green (assigned)
-      : { background: "#fef9c3", border: "2px solid #ca8a04" }; // yellow (unassigned)
+      ? { background: "#dcfce7", border: "2px solid #16a34a" }
+      : { background: "#fef9c3", border: "2px solid #ca8a04" };
 
     return (
       <div
@@ -435,14 +489,29 @@ export default function MyTicketsPage() {
           e.currentTarget.style.transform = "none";
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 10,
+            alignItems: "flex-start",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
             <div style={{ fontWeight: 900 }}>{t.title}</div>
 
-            {/* Assignment badge (more obvious) */}
             <span
               style={{
-                ...(t.status === "resolved" ? resolvedPillOverride() : assignmentBadgeStyle),
+                ...(t.status === "resolved"
+                  ? resolvedPillOverride()
+                  : assignmentBadgeStyle),
                 padding: "2px 10px",
                 borderRadius: 999,
                 fontSize: 12,
@@ -450,13 +519,18 @@ export default function MyTicketsPage() {
                 letterSpacing: 0.3,
               }}
             >
-              {isMine ? "ASSIGNED TO YOU" : isAssignedToOther ? "ASSIGNED" : "UNASSIGNED"}
+              {isMine
+                ? "ASSIGNED TO YOU"
+                : isAssignedToOther
+                ? "ASSIGNED"
+                : "UNASSIGNED"}
             </span>
 
-            {/* Status badge (more obvious) */}
             <span
               style={{
-                ...(t.status === "resolved" ? resolvedPillOverride() : statusBadgeStyle(t.status)),
+                ...(t.status === "resolved"
+                  ? resolvedPillOverride()
+                  : statusBadgeStyle(t.status)),
                 padding: "2px 10px",
                 borderRadius: 999,
                 fontSize: 12,
@@ -468,10 +542,11 @@ export default function MyTicketsPage() {
               {t.status}
             </span>
 
-            {/* Priority badge (more obvious) */}
             <span
               style={{
-                ...(t.status === "resolved" ? resolvedPillOverride() : priorityBadgeStyle(t.priority)),
+                ...(t.status === "resolved"
+                  ? resolvedPillOverride()
+                  : priorityBadgeStyle(t.priority)),
                 padding: "2px 10px",
                 borderRadius: 999,
                 fontSize: 12,
@@ -483,7 +558,6 @@ export default function MyTicketsPage() {
             </span>
           </div>
 
-          {/* Tech actions: NOT shown for resolved (read-only) */}
           {isTech && t.status !== "resolved" ? (
             <div
               style={{
@@ -494,7 +568,9 @@ export default function MyTicketsPage() {
                 justifyContent: "flex-end",
               }}
             >
-              <span style={{ fontSize: 12, opacity: 0.8, fontWeight: 800 }}>Set status</span>
+              <span style={{ fontSize: 12, opacity: 0.8, fontWeight: 800 }}>
+                Set status
+              </span>
               <select
                 value={t.status}
                 onClick={(e) => e.stopPropagation()}
@@ -541,7 +617,15 @@ export default function MyTicketsPage() {
 
         <div style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{t.description}</div>
 
-        <div style={{ marginTop: 10, opacity: 0.9, display: "flex", gap: 14, flexWrap: "wrap" }}>
+        <div
+          style={{
+            marginTop: 10,
+            opacity: 0.9,
+            display: "flex",
+            gap: 14,
+            flexWrap: "wrap",
+          }}
+        >
           <span>
             requester: <b>{requesterLabel}</b>
           </span>
@@ -580,11 +664,27 @@ export default function MyTicketsPage() {
 
   return (
     <div style={{ maxWidth: 900, margin: "24px auto", padding: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+        }}
+      >
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 800 }}>My Tickets</h1>
 
-          <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div
+            style={{
+              marginTop: 6,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
             <span style={{ opacity: 0.85 }}>
               Signed in as: <b>{email || "(no email)"}</b>
             </span>
@@ -608,31 +708,82 @@ export default function MyTicketsPage() {
               </span>
             ) : null}
 
-            <span style={{ opacity: 0.8 }}>{isStaff ? "(view: all tickets)" : "(view: your tickets only)"}</span>
+            <span style={{ opacity: 0.8 }}>
+              {isStaff ? "(view: all tickets)" : "(view: your tickets only)"}
+            </span>
 
-            {isAdmin ? <span style={{ opacity: 0.75, fontSize: 12 }}>Admin is view-only (no edits/deletes)</span> : null}
-            {isTech ? <span style={{ opacity: 0.75, fontSize: 12 }}>Tech can assign/unassign + update status</span> : null}
+            {isAdmin ? (
+              <span style={{ opacity: 0.75, fontSize: 12 }}>
+                Admin is view-only (no edits/deletes)
+              </span>
+            ) : null}
+            {isTech ? (
+              <span style={{ opacity: 0.75, fontSize: 12 }}>
+                Tech can assign/unassign + update status
+              </span>
+            ) : null}
           </div>
 
-          {error ? <div style={{ marginTop: 8, color: "crimson" }}>{error}</div> : null}
+          {error ? (
+            <div style={{ marginTop: 8, color: "crimson" }}>{error}</div>
+          ) : null}
           {actionNotice ? <div style={{ marginTop: 8 }}>{actionNotice}</div> : null}
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" onClick={loadTickets} disabled={loadingTickets}>
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <button
+            type="button"
+            onClick={loadTickets}
+            disabled={loadingTickets}
+            style={headerButtonStyle}
+          >
             {loadingTickets ? "Refreshing…" : "Refresh"}
           </button>
-          <button type="button" onClick={doSignOut}>
+
+          <button
+            type="button"
+            onClick={goToChangePassword}
+            style={headerButtonStyle}
+          >
+            Change Password
+          </button>
+
+          <button
+            type="button"
+            onClick={doSignOut}
+            style={signOutButtonStyle}
+          >
             Sign out
           </button>
         </div>
       </div>
 
-      <div style={{ marginTop: 20, border: "1px solid #ddd", borderRadius: 10, padding: 14 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Create a ticket</h2>
+      <div
+        style={{
+          marginTop: 20,
+          border: "1px solid #ddd",
+          borderRadius: 10,
+          padding: 14,
+        }}
+      >
+        <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>
+          Create a ticket
+        </h2>
 
         <div style={{ display: "grid", gap: 10 }}>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" style={{ padding: 10 }} />
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Title"
+            style={{ padding: 10 }}
+          />
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -640,7 +791,13 @@ export default function MyTicketsPage() {
             style={{ padding: 10, minHeight: 90 }}
           />
 
-          <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr", gap: 10 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr",
+              gap: 10,
+            }}
+          >
             <input
               value={location}
               onChange={(e) => setLocation(e.target.value)}
@@ -652,7 +809,7 @@ export default function MyTicketsPage() {
               onChange={(e) => setCategory(e.target.value)}
               style={{
                 padding: 10,
-                color: category ? "#000" : "#9ca3af", // grey when placeholder
+                color: category ? "#000" : "#9ca3af",
               }}
             >
               <option value="" disabled>
@@ -679,13 +836,19 @@ export default function MyTicketsPage() {
             </select>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr", gap: 10 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isNarrow ? "1fr" : "1fr 1fr",
+              gap: 10,
+            }}
+          >
             <select
               value={priority}
               onChange={(e) => setPriority(e.target.value)}
               style={{
                 padding: 10,
-                color: priority ? "#000" : "#9ca3af", // grey when placeholder
+                color: priority ? "#000" : "#9ca3af",
               }}
             >
               <option value="" disabled>
@@ -708,7 +871,13 @@ export default function MyTicketsPage() {
             <button
               type="button"
               onClick={createTicket}
-              disabled={creating || !title.trim() || !description.trim() || !category || !priority}
+              disabled={
+                creating ||
+                !title.trim() ||
+                !description.trim() ||
+                !category ||
+                !priority
+              }
               style={{ padding: 10 }}
             >
               {creating ? "Creating…" : "Submit ticket"}
@@ -720,7 +889,6 @@ export default function MyTicketsPage() {
       </div>
 
       <div style={{ marginTop: 18 }}>
-        {/* Active */}
         <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>
           Active Tickets {loadingTickets ? "(loading…)" : `(${activeTickets.length})`}
         </h2>
@@ -735,7 +903,6 @@ export default function MyTicketsPage() {
           </div>
         )}
 
-        {/* Resolved (collapsed by default) */}
         <div style={{ marginTop: 18 }}>
           <button
             type="button"
@@ -754,7 +921,9 @@ export default function MyTicketsPage() {
               cursor: "pointer",
             }}
           >
-            <span>Resolved Tickets {loadingTickets ? "(loading…)" : `(${resolvedTickets.length})`}</span>
+            <span>
+              Resolved Tickets {loadingTickets ? "(loading…)" : `(${resolvedTickets.length})`}
+            </span>
             <span style={{ opacity: 0.75 }}>{resolvedOpen ? "▾" : "▸"}</span>
           </button>
 

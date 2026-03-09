@@ -1,131 +1,180 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useRouter } from "next/navigation";
 
 export default function ChangePasswordPage() {
   const router = useRouter();
 
-  const [loading, setLoading] = useState(false);
-  const [checking, setChecking] = useState(true);
-
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
 
   useEffect(() => {
-    // Ensure user is logged in, and only show this page if they actually must change password
-    const run = async () => {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const user = sessionData.session?.user;
+    async function loadUser() {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
-      if (!user) {
-        router.replace("/login");
-        return;
+        const userId = session?.user?.id;
+        if (!userId) {
+          router.replace("/login");
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("must_change_password")
+          .eq("id", userId)
+          .single();
+
+        if (profileError) throw profileError;
+
+        setMustChangePassword(Boolean(profile?.must_change_password));
+      } catch (err: any) {
+        setError(err?.message ?? "Failed to load account information.");
+      } finally {
+        setCheckingSession(false);
       }
+    }
 
-      const { data: profile, error: profileErr } = await supabase
-        .from("profiles")
-        .select("must_change_password")
-        .eq("id", user.id)
-        .single();
-
-      if (profileErr) {
-        setError(profileErr.message);
-        setChecking(false);
-        return;
-      }
-
-      // If they don't need to change, send them to the app
-      if (!profile?.must_change_password) {
-        router.replace("/my-tickets");
-        return;
-      }
-
-      setChecking(false);
-    };
-
-    run();
+    loadUser();
   }, [router]);
 
-  const onSubmit = async (e: React.FormEvent) => {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    setMessage(null);
+    if (busy) return;
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+    setError(null);
+    setSuccess(null);
+
+    const trimmedPassword = password.trim();
+    const trimmedConfirmPassword = confirmPassword.trim();
+
+    if (trimmedPassword.length < 6) {
+      setError("New password must be at least 6 characters.");
       return;
     }
-    if (password !== confirm) {
+
+    if (trimmedPassword !== trimmedConfirmPassword) {
       setError("Passwords do not match.");
       return;
     }
 
-    setLoading(true);
-    try {
-      // 1) Update Supabase Auth password
-      const { error: authErr } = await supabase.auth.updateUser({ password });
-      if (authErr) throw authErr;
+    setBusy(true);
 
-      // 2) Flip the profile flag so they can proceed next time
-      const { error: profErr } = await supabase
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const userId = session?.user?.id;
+      if (!userId) {
+        throw new Error("You must be signed in to change your password.");
+      }
+
+      const { error: updateAuthError } = await supabase.auth.updateUser({
+        password: trimmedPassword,
+      });
+
+      if (updateAuthError) throw updateAuthError;
+
+      const { error: updateProfileError } = await supabase
         .from("profiles")
         .update({
           must_change_password: false,
           password_changed_at: new Date().toISOString(),
         })
-        .eq("id", (await supabase.auth.getUser()).data.user?.id);
+        .eq("id", userId);
 
-      if (profErr) throw profErr;
+      if (updateProfileError) throw updateProfileError;
 
-      setMessage("Password updated. Redirecting...");
-      router.replace("/my-tickets");
+      setSuccess("Password changed successfully. Redirecting...");
+      setPassword("");
+      setConfirmPassword("");
+
+      setTimeout(() => {
+        router.replace("/my-tickets");
+      }, 1000);
     } catch (err: any) {
-      setError(err?.message ?? "Something went wrong.");
+      setError(err?.message ?? "Failed to change password.");
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
-  };
+  }
 
-  if (checking) return <div style={{ padding: 16 }}>Checking account…</div>;
+  if (checkingSession) {
+    return (
+      <div style={{ maxWidth: 420, margin: "40px auto", padding: 16 }}>
+        <p>Loading...</p>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ padding: 16, maxWidth: 420 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700 }}>Change your password</h1>
-      <p style={{ marginTop: 8 }}>
-        This is required as you've requested a password reset. Please choose a new password to continue.
+    <div style={{ maxWidth: 420, margin: "40px auto", padding: 16 }}>
+      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>
+        Change Password
+      </h1>
+
+      <p style={{ marginBottom: 16, color: "#444" }}>
+        {mustChangePassword
+          ? "You need to choose a new password before continuing."
+          : "You can update your password here at any time."}
       </p>
 
-      <form onSubmit={onSubmit} style={{ marginTop: 16, display: "grid", gap: 12 }}>
-        <label style={{ display: "grid", gap: 6 }}>
-          New password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-          />
-        </label>
+      <form onSubmit={handleSubmit} style={{ display: "grid", gap: 10 }}>
+        <input
+          type="password"
+          placeholder="New password"
+          value={password}
+          autoComplete="new-password"
+          onChange={(e) => setPassword(e.target.value)}
+          style={{ padding: 10 }}
+        />
 
-        <label style={{ display: "grid", gap: 6 }}>
-          Confirm password
-          <input
-            type="password"
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            autoComplete="new-password"
-          />
-        </label>
+        <input
+          type="password"
+          placeholder="Confirm new password"
+          value={confirmPassword}
+          autoComplete="new-password"
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          style={{ padding: 10 }}
+        />
 
-        {error && <div style={{ color: "crimson" }}>{error}</div>}
-        {message && <div>{message}</div>}
-
-        <button type="submit" disabled={loading}>
-          {loading ? "Updating…" : "Update password"}
+        <button
+          type="submit"
+          disabled={busy || password.trim().length < 6 || confirmPassword.trim().length < 6}
+          style={{ padding: 10 }}
+        >
+          {busy ? "Saving..." : "Save new password"}
         </button>
+
+        {!mustChangePassword && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => router.push("/my-tickets")}
+            style={{
+              padding: 10,
+              background: "transparent",
+              border: "none",
+              textDecoration: "underline",
+              cursor: "pointer",
+            }}
+          >
+            Back to my tickets
+          </button>
+        )}
+
+        {error && <p>{error}</p>}
+        {success && <p>{success}</p>}
       </form>
     </div>
   );

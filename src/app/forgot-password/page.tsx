@@ -26,7 +26,6 @@ export default function ForgotPasswordPage() {
 
       if (error) throw error;
 
-      // data is the created/reused ticket id (uuid). We don't need to display it to the user.
       setSubmitted(true);
     } catch (err: any) {
       setError(err?.message ?? "Failed to submit request.");
@@ -42,8 +41,12 @@ export default function ForgotPasswordPage() {
   return (
     <div style={{ maxWidth: 420, margin: "40px auto", padding: 16 }}>
       <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>
-        Forgot password
+        Password Reset Request
       </h1>
+
+      <p style={{ opacity: 0.7, marginBottom: 16 }}>
+        For IT/Admin use only. All other staff sign in with their email and the universal password.
+      </p>
 
       {submitted ? (
         <div style={{ display: "grid", gap: 10 }}>
@@ -58,7 +61,7 @@ export default function ForgotPasswordPage() {
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
           <p style={{ margin: 0 }}>
-            Enter your email. This will send a password reset request to IT.
+            Enter the email address associated with your account to request a password reset.
           </p>
 
           <input

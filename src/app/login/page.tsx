@@ -50,23 +50,29 @@ export default function LoginPage() {
     }
   }
 
-  function goToCreateAccount() {
+  function goToRequestAccount() {
     setError(null);
-    router.push("/create-account");
+    router.push("/request-account");
   }
 
-  function goToForgotPassword() {
-    setError(null);
-    router.push("/forgot-password");
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (busy) return;
+    await doSignIn();
   }
 
   return (
     <div style={{ maxWidth: 420, margin: "40px auto", padding: 16 }}>
+      <img src="/favicon.ico" alt="Peck IT Ticketing" style={{ width: 80, marginBottom: 20, marginLeft: 150 }} />
       <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>
         IT Support Login
       </h1>
 
-      <div style={{ display: "grid", gap: 10 }}>
+      <p style={{ marginBottom: 16, color: "#444", fontSize: 12}}>
+        Please sign in using your school email and the password provided by IT. If you don't have an account, you can request one below.
+      </p>
+
+      <form onSubmit={handleSubmit} style={{ display: "grid", gap: 10 }}>
         <input
           type="email"
           placeholder="Email"
@@ -86,9 +92,8 @@ export default function LoginPage() {
         />
 
         <button
-          type="button"
+          type="submit"
           disabled={busy || !email.trim() || password.length < 6}
-          onClick={doSignIn}
           style={{ padding: 10 }}
         >
           {busy ? "Signing in..." : "Sign in"}
@@ -97,29 +102,14 @@ export default function LoginPage() {
         <button
           type="button"
           disabled={busy}
-          onClick={goToCreateAccount}
+          onClick={goToRequestAccount}
           style={{ padding: 10 }}
         >
-          Create account
-        </button>
-
-        <button
-          type="button"
-          disabled={busy}
-          onClick={goToForgotPassword}
-          style={{
-            padding: 10,
-            background: "transparent",
-            border: "none",
-            textDecoration: "underline",
-            cursor: "pointer",
-          }}
-        >
-          Forgot password?
+          Request an account
         </button>
 
         {error && <p>{error}</p>}
-      </div>
+      </form>
     </div>
   );
 }
