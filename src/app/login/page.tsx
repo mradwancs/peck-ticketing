@@ -62,14 +62,26 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ maxWidth: 420, margin: "40px auto", padding: 16 }}>
-      <img src="/favicon.ico" alt="Peck IT Ticketing" style={{ width: 80, marginBottom: 20, marginLeft: 150 }} />
+    <div
+      style={{
+        maxWidth: 420,
+        margin: "10vh auto",
+        padding: 28,
+        background: "#ffffff",
+        border: "1px solid #e5e7eb",
+        borderRadius: 12,
+        boxShadow: "0 8px 20px rgba(0,0,0,0.05)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 24 }}>
+        <img src="/favicon.ico" alt="Peck IT Ticketing" style={{ width: 72 }} />
+      </div>
       <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>
         IT Support Login
       </h1>
 
       <p style={{ marginBottom: 16, color: "#444", fontSize: 12}}>
-        Please sign in using your school email and the password provided by IT. If you don't have an account, you can request one below.
+        Please sign in using your school email and the password provided to you. If you don't have an account, you can request one below.
       </p>
 
       <form onSubmit={handleSubmit} style={{ display: "grid", gap: 10 }}>
@@ -79,7 +91,7 @@ export default function LoginPage() {
           value={email}
           autoComplete="email"
           onChange={(e) => setEmail(e.target.value)}
-          style={{ padding: 10 }}
+          style={{ padding: 12 }}
         />
 
         <input
@@ -88,13 +100,25 @@ export default function LoginPage() {
           value={password}
           autoComplete="current-password"
           onChange={(e) => setPassword(e.target.value)}
-          style={{ padding: 10 }}
+          style={{ padding: 12 }}
         />
 
         <button
           type="submit"
           disabled={busy || !email.trim() || password.length < 6}
-          style={{ padding: 10 }}
+          style={{
+            padding: "12px 16px",
+            borderRadius: 8,
+            border: "none",
+            background: "#2563eb",
+            color: "#fff",
+            fontWeight: 600,
+            fontSize: 14,
+            cursor: "pointer",
+            transition: "background 0.15s ease",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#1d4ed8")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#2563eb")}
         >
           {busy ? "Signing in..." : "Sign in"}
         </button>
@@ -103,11 +127,24 @@ export default function LoginPage() {
           type="button"
           disabled={busy}
           onClick={goToRequestAccount}
-          style={{ padding: 10 }}
+          style={{
+            padding: "12px 16px",
+            borderRadius: 8,
+            border: "1px solid #d1d5db",
+            background: "#fff",
+            color: "#111",
+            fontWeight: 500,
+            fontSize: 14,
+            cursor: "pointer",
+            transition: "background 0.15s ease background-color black",
+
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#d0d4e0")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
         >
           Request an account
         </button>
-
+      
         {error && <p>{error}</p>}
       </form>
     </div>

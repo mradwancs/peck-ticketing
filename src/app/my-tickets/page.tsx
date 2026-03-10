@@ -396,10 +396,6 @@ export default function MyTicketsPage() {
     router.replace("/login");
   }
 
-  function goToChangePassword() {
-    router.push("/change-password");
-  }
-
   const activeTickets = useMemo(() => {
     const rows = tickets.filter((t) => t.status !== "resolved");
 
@@ -745,14 +741,6 @@ export default function MyTicketsPage() {
             style={headerButtonStyle}
           >
             {loadingTickets ? "Refreshing…" : "Refresh"}
-          </button>
-
-          <button
-            type="button"
-            onClick={goToChangePassword}
-            style={headerButtonStyle}
-          >
-            Change Password
           </button>
 
           <button
