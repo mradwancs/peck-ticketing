@@ -76,7 +76,7 @@ export default function LoginPage() {
       <div style={{ display: "flex", justifyContent: "center", marginBottom: 24 }}>
         <img src="/favicon.ico" alt="Peck IT Ticketing" style={{ width: 72 }} />
       </div>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12 }}>
+      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12, color: "#111" }}>
         IT Support Login
       </h1>
 
