@@ -69,3 +69,14 @@ A successful response includes `ticketCreated: false` when recent ticket
 activity exists, or `ticketCreated: true` and the new ticket ID after five quiet
 days. Any scheduler that can send the same authenticated daily GET request can
 be used instead of Vercel Cron.
+
+## Unread ticket replies
+
+The ticket list shows an unread-reply badge to the original requester. Opening
+the ticket marks the current responses as read. The read state is stored in
+Supabase so it follows the user across browsers and devices.
+
+Before deploying this feature, run
+`supabase/migrations/20260819000000_add_ticket_comment_reads.sql` in the
+Supabase SQL Editor. Projects linked through the Supabase CLI can apply it with
+`supabase db push` instead.

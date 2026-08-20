@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import styles from "./page.module.css";
 
 type TicketRow = {
   id: string;
@@ -17,7 +18,6 @@ type TicketRow = {
   created_at: string;
   updated_at: string;
   closed_at: string | null;
-
   requester?: { email: string | null; full_name: string | null } | null;
   assignee?: { email: string | null; full_name: string | null } | null;
 };
@@ -48,50 +48,85 @@ type EventRow = {
   actor?: { email: string | null; full_name: string | null } | null;
 };
 
-const STATUS_OPTIONS = ["open", "in_progress", "waiting_on_user", "resolved"] as const;
+const STATUS_OPTIONS = [
+  "open",
+  "in_progress",
+  "waiting_on_user",
+  "resolved",
+] as const;
 
 function emailToName(email: string) {
   const left = email.split("@")[0] ?? email;
   return left.replace(/[._-]+/g, " ").trim();
 }
 
-function displayNameFromProfile(p?: { full_name: string | null; email: string | null } | null) {
-  const full = (p?.full_name ?? "").trim();
-  if (full) return full;
+function displayNameFromProfile(
+  profile?: { full_name: string | null; email: string | null } | null
+) {
+  const fullName = (profile?.full_name ?? "").trim();
+  if (fullName) return fullName;
 
-  const em = (p?.email ?? "").trim();
-  if (em) return emailToName(em);
-
-  return null;
+  const email = (profile?.email ?? "").trim();
+  return email ? emailToName(email) : null;
 }
 
-function isUuidLike(s: string) {
-  // "good enough" UUID check (keeps this lightweight)
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+function isUuidLike(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value
+  );
+}
+
+function formatStatus(status: string) {
+  return status
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function initialsFor(name: string) {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "?";
+
+  return words
+    .slice(0, 2)
+    .map((word) => word.charAt(0).toUpperCase())
+    .join("");
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return fallback;
 }
 
 export default function TicketDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const ticketId = params.id;
-  const commentRef = useRef<HTMLTextAreaElement | null>(null);
 
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [loading, setLoading] = useState(true);
-
   const [userId, setUserId] = useState<string | null>(null);
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<string>("user");
+  const [role, setRole] = useState("user");
 
   const isTech = useMemo(() => role === "tech", [role]);
   const isAdmin = useMemo(() => role === "admin", [role]);
-  const isStaff = useMemo(() => role === "tech" || role === "admin", [role]);
+  const isStaff = useMemo(
+    () => role === "tech" || role === "admin",
+    [role]
+  );
 
   const [ticket, setTicket] = useState<TicketRow | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [comments, setComments] = useState<CommentRow[]>([]);
-
-  // profileId -> { email, full_name } (used when joins are blocked + for history old/new mapping)
   const [profileById, setProfileById] = useState<
     Record<string, { email: string | null; full_name: string | null }>
   >({});
@@ -99,7 +134,6 @@ export default function TicketDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
-
   const [commentBody, setCommentBody] = useState("");
   const [postingComment, setPostingComment] = useState(false);
 
@@ -108,9 +142,10 @@ export default function TicketDetailPage() {
       setCheckingAuth(true);
       setError(null);
 
-      const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
-      if (sessionErr) {
-        setError(sessionErr.message);
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
+      if (sessionError) {
+        setError(sessionError.message);
         setCheckingAuth(false);
         return;
       }
@@ -124,13 +159,13 @@ export default function TicketDetailPage() {
       setUserId(user.id);
       setEmail(user.email ?? "");
 
-      const { data: profile, error: profileErr } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("id, role")
         .eq("id", user.id)
         .single<ProfileRow>();
 
-      setRole(profileErr ? "user" : profile?.role ?? "user");
+      setRole(profileError ? "user" : profile?.role ?? "user");
       setCheckingAuth(false);
     };
 
@@ -139,80 +174,113 @@ export default function TicketDetailPage() {
 
   useEffect(() => {
     if (!checkingAuth) loadAll();
+    // loadAll intentionally runs after authentication finishes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checkingAuth]);
 
   function nameFromProfileId(id: string | null | undefined) {
     if (!id) return null;
-    const p = profileById[id];
-    const full = (p?.full_name ?? "").trim();
-    if (full) return full;
+    const profile = profileById[id];
+    const fullName = (profile?.full_name ?? "").trim();
+    if (fullName) return fullName;
 
-    const em = (p?.email ?? "").trim();
-    if (em) return emailToName(em);
-
-    return null;
-  }
-
-  function formatWhoFromIdOrEmail(value: string | null | undefined) {
-    if (!value) return "—";
-    if (value.includes("@")) return emailToName(value);
-    const byId = nameFromProfileId(value);
-    return byId ?? value; // last-resort: show the id
+    const profileEmail = (profile?.email ?? "").trim();
+    return profileEmail ? emailToName(profileEmail) : null;
   }
 
   function formatAssigneeValue(raw: string | null | undefined) {
-    const v = (raw ?? "").trim();
-    if (!v) return "unassigned";
-
-    // Old/new values for assigned_changed are usually UUIDs
-    if (isUuidLike(v)) return nameFromProfileId(v) ?? v;
-
-    // If it’s somehow an email:
-    if (v.includes("@")) return emailToName(v);
-
-    return v;
+    const value = (raw ?? "").trim();
+    if (!value) return "unassigned";
+    if (isUuidLike(value)) return nameFromProfileId(value) ?? value;
+    if (value.includes("@")) return emailToName(value);
+    return value;
   }
 
-  function formatEvent(e: EventRow) {
-    const oldV = (e.old_value ?? "").trim();
-    const newV = (e.new_value ?? "").trim();
+  function formatEvent(event: EventRow) {
+    const oldValue = (event.old_value ?? "").trim();
+    const newValue = (event.new_value ?? "").trim();
 
-    switch (e.event_type) {
+    switch (event.event_type) {
       case "ticket_created":
         return "Ticket created";
       case "status_changed":
-        return `Status changed: ${oldV || "—"} → ${newV || "—"}`;
+        return `Status changed: ${formatStatus(oldValue || "unknown")} → ${formatStatus(
+          newValue || "unknown"
+        )}`;
       case "assigned_changed":
-        return `Assignee changed: ${formatAssigneeValue(oldV)} → ${formatAssigneeValue(newV)}`;
+        return `Assignee changed: ${formatAssigneeValue(
+          oldValue
+        )} → ${formatAssigneeValue(newValue)}`;
       case "ticket_closed":
-        return "Ticket closed";
+        return "Ticket resolved";
       default: {
-        const field = e.field_name ? `${e.field_name}: ` : "";
-        if (!oldV && !newV) return `${e.event_type}${field ? ` — ${field}` : ""}`.trim();
-        return `${e.event_type}${field ? ` — ${field}` : ""}: ${oldV || "—"} → ${newV || "—"}`;
+        const field = event.field_name ? `${event.field_name}: ` : "";
+        if (!oldValue && !newValue) return event.event_type;
+        return `${field}${oldValue || "—"} → ${newValue || "—"}`;
       }
     }
   }
 
   async function resolveProfilesForTicket(allIds: string[]) {
-    const unique = Array.from(new Set(allIds.filter(Boolean)));
-    if (unique.length === 0) return;
+    const uniqueIds = Array.from(new Set(allIds.filter(Boolean)));
+    if (uniqueIds.length === 0) return;
 
-    const { data, error } = await supabase.rpc("ticket_profile_emails", {
-      _ticket_id: ticketId,
-      _ids: unique,
-    });
+    const { data, error: profileError } = await supabase.rpc(
+      "ticket_profile_emails",
+      {
+        _ticket_id: ticketId,
+        _ids: uniqueIds,
+      }
+    );
 
-    if (error || !data) return;
+    if (profileError || !data) return;
 
-    const map: Record<string, { email: string | null; full_name: string | null }> = {};
-    for (const row of data as Array<{ id: string; email: string | null; full_name: string | null }>) {
+    const nextProfiles: Record<
+      string,
+      { email: string | null; full_name: string | null }
+    > = {};
+
+    for (const row of data as Array<{
+      id: string;
+      email: string | null;
+      full_name: string | null;
+    }>) {
       if (!row?.id) continue;
-      map[row.id] = { email: row.email ?? null, full_name: row.full_name ?? null };
+      nextProfiles[row.id] = {
+        email: row.email ?? null,
+        full_name: row.full_name ?? null,
+      };
     }
 
-    setProfileById((prev) => ({ ...prev, ...map }));
+    setProfileById((previous) => ({ ...previous, ...nextProfiles }));
+  }
+
+  async function markRequesterCommentsRead(
+    ticketData: TicketRow,
+    commentRows: CommentRow[]
+  ) {
+    if (!userId || ticketData.requester_id !== userId) return;
+
+    const latestResponse = commentRows
+      .filter((comment) => comment.author_id !== userId)
+      .at(-1);
+    if (!latestResponse) return;
+
+    const { error: readError } = await supabase
+      .from("ticket_comment_reads")
+      .upsert(
+        {
+          ticket_id: ticketData.id,
+          user_id: userId,
+          last_read_at: latestResponse.created_at,
+        },
+        { onConflict: "ticket_id,user_id" }
+      );
+
+    if (readError) {
+      // The page remains usable while the read-state migration is pending.
+      console.warn("Could not mark ticket comments as read:", readError.message);
+    }
   }
 
   async function loadAll() {
@@ -221,7 +289,7 @@ export default function TicketDetailPage() {
     setNotice(null);
 
     try {
-      const { data: ticketData, error: ticketErr } = await supabase
+      const { data: ticketData, error: ticketError } = await supabase
         .from("tickets")
         .select(
           `
@@ -234,10 +302,10 @@ export default function TicketDetailPage() {
         .eq("id", ticketId)
         .single<TicketRow>();
 
-      if (ticketErr) throw ticketErr;
+      if (ticketError) throw ticketError;
       setTicket(ticketData);
 
-      const { data: eventRows, error: eventsErr } = await supabase
+      const { data: eventRows, error: eventsError } = await supabase
         .from("ticket_events")
         .select(
           `
@@ -249,10 +317,10 @@ export default function TicketDetailPage() {
         .order("created_at", { ascending: false })
         .returns<EventRow[]>();
 
-      if (eventsErr) throw eventsErr;
+      if (eventsError) throw eventsError;
       setEvents(eventRows ?? []);
 
-      const { data: commentRows, error: commentsErr } = await supabase
+      const { data: commentRows, error: commentsError } = await supabase
         .from("ticket_comments")
         .select(
           `
@@ -264,30 +332,28 @@ export default function TicketDetailPage() {
         .order("created_at", { ascending: true })
         .returns<CommentRow[]>();
 
-      if (commentsErr) throw commentsErr;
+      if (commentsError) throw commentsError;
       setComments(commentRows ?? []);
+      await markRequesterCommentsRead(ticketData, commentRows ?? []);
 
-      // Also resolve any ids that appear in assigned_changed old/new values
       const assignedChangeIds: string[] = [];
-      for (const e of eventRows ?? []) {
-        if (e.event_type !== "assigned_changed") continue;
-        const o = (e.old_value ?? "").trim();
-        const n = (e.new_value ?? "").trim();
-        if (o && isUuidLike(o)) assignedChangeIds.push(o);
-        if (n && isUuidLike(n)) assignedChangeIds.push(n);
+      for (const event of eventRows ?? []) {
+        if (event.event_type !== "assigned_changed") continue;
+        const oldValue = (event.old_value ?? "").trim();
+        const newValue = (event.new_value ?? "").trim();
+        if (oldValue && isUuidLike(oldValue)) assignedChangeIds.push(oldValue);
+        if (newValue && isUuidLike(newValue)) assignedChangeIds.push(newValue);
       }
 
-      const idsToResolve = [
-        ...(eventRows ?? []).map((e) => e.actor_id),
-        ...(commentRows ?? []).map((c) => c.author_id),
+      await resolveProfilesForTicket([
+        ...(eventRows ?? []).map((event) => event.actor_id),
+        ...(commentRows ?? []).map((comment) => comment.author_id),
         ticketData.requester_id,
         ...(ticketData.assigned_to ? [ticketData.assigned_to] : []),
         ...assignedChangeIds,
-      ];
-
-      await resolveProfilesForTicket(idsToResolve);
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to load ticket.");
+      ]);
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError, "Failed to load ticket."));
     } finally {
       setLoading(false);
     }
@@ -301,30 +367,20 @@ export default function TicketDetailPage() {
     setNotice(null);
 
     try {
-      const { error } = await supabase.from("tickets").update({ status: newStatus }).eq("id", ticket.id);
-      if (error) throw error;
+      const { error: updateError } = await supabase
+        .from("tickets")
+        .update({ status: newStatus })
+        .eq("id", ticket.id);
+      if (updateError) throw updateError;
 
-      // Refresh everything so closed_at + history are always accurate
       await loadAll();
       setNotice("Status updated.");
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to update status.");
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError, "Failed to update status."));
     } finally {
       setUpdating(false);
     }
   }
-
-  useEffect(() => {
-    if (!ticket) return;
-
-    const resolved = ticket.status === "resolved";
-    const allowed = !resolved && (role === "tech" || ticket.requester_id === userId);
-
-    if (allowed) {
-      // slight delay avoids focusing before the textarea mounts
-      setTimeout(() => commentRef.current?.focus(), 0);
-    }
-  }, [ticket?.id, ticket?.status, role, userId]);
 
   async function assignToMe() {
     if (!isTech || !ticket || !userId) return;
@@ -334,13 +390,16 @@ export default function TicketDetailPage() {
     setNotice(null);
 
     try {
-      const { error } = await supabase.from("tickets").update({ assigned_to: userId }).eq("id", ticket.id);
-      if (error) throw error;
+      const { error: updateError } = await supabase
+        .from("tickets")
+        .update({ assigned_to: userId })
+        .eq("id", ticket.id);
+      if (updateError) throw updateError;
 
       await loadAll();
       setNotice("Assigned to you.");
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to assign ticket.");
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError, "Failed to assign ticket."));
     } finally {
       setUpdating(false);
     }
@@ -354,13 +413,16 @@ export default function TicketDetailPage() {
     setNotice(null);
 
     try {
-      const { error } = await supabase.from("tickets").update({ assigned_to: null }).eq("id", ticket.id);
-      if (error) throw error;
+      const { error: updateError } = await supabase
+        .from("tickets")
+        .update({ assigned_to: null })
+        .eq("id", ticket.id);
+      if (updateError) throw updateError;
 
       await loadAll();
-      setNotice("Unassigned.");
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to unassign ticket.");
+      setNotice("Ticket unassigned.");
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError, "Failed to unassign ticket."));
     } finally {
       setUpdating(false);
     }
@@ -379,270 +441,367 @@ export default function TicketDetailPage() {
 
     setPostingComment(true);
     try {
-      const { error } = await supabase.from("ticket_comments").insert({
-        ticket_id: ticketId,
-        author_id: userId,
-        body,
-      });
-
-      if (error) throw error;
+      const { error: commentError } = await supabase
+        .from("ticket_comments")
+        .insert({
+          ticket_id: ticketId,
+          author_id: userId,
+          body,
+        });
+      if (commentError) throw commentError;
 
       setCommentBody("");
       await loadAll();
-      setNotice("Comment added.");
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to add comment.");
+      setNotice("Reply posted.");
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError, "Failed to add reply."));
     } finally {
       setPostingComment(false);
     }
   }
 
-  if (checkingAuth || loading) return <div style={{ padding: 16 }}>Loading…</div>;
-  if (!ticket) return <div style={{ padding: 16 }}>Ticket not found.</div>;
+  if (checkingAuth || loading) {
+    return <div className={styles.loadingState}>Loading ticket…</div>;
+  }
+
+  if (!ticket) {
+    return <div className={styles.loadingState}>Ticket not found.</div>;
+  }
 
   const requesterLabel =
     displayNameFromProfile(ticket.requester) ??
     nameFromProfileId(ticket.requester_id) ??
     ticket.requester_id;
-
   const assigneeLabel = ticket.assigned_to
     ? displayNameFromProfile(ticket.assignee) ??
       nameFromProfileId(ticket.assigned_to) ??
       ticket.assigned_to
-    : "unassigned";
+    : "Unassigned";
 
-  const requesterEmail = ticket.requester?.email ?? profileById[ticket.requester_id]?.email ?? null;
+  const requesterEmail =
+    ticket.requester?.email ??
+    profileById[ticket.requester_id]?.email ??
+    null;
   const assigneeEmail =
     ticket.assignee?.email ??
-    (ticket.assigned_to ? profileById[ticket.assigned_to]?.email ?? null : null);
+    (ticket.assigned_to
+      ? profileById[ticket.assigned_to]?.email ?? null
+      : null);
 
   const isMine = ticket.assigned_to === userId;
   const isResolved = ticket.status === "resolved";
-  const resolvedAt = ticket.closed_at ? new Date(ticket.closed_at).toLocaleString() : null;
-
-  // Your preference: if resolved, users should not be able to do anything (no comment / no staff actions)
-  const canDoActions = !isResolved;
-
-  // comment permission (RLS enforces too), but additionally: disable all actions if resolved
-  const canComment = canDoActions && (isTech || ticket.requester_id === userId);
+  const canComment =
+    !isResolved && (isTech || ticket.requester_id === userId);
+  const statusClass =
+    ticket.status === "resolved"
+      ? styles.statusResolved
+      : ticket.status === "in_progress"
+      ? styles.statusProgress
+      : ticket.status === "waiting_on_user"
+      ? styles.statusWaiting
+      : styles.statusOpen;
 
   return (
-    <div style={{ maxWidth: 900, margin: "24px auto", padding: 16 }}>
-      <button onClick={() => router.back()} style={{ marginBottom: 12 }}>
-        ← Back
-      </button>
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          alignItems: "flex-start",
-          flexWrap: "wrap",
-        }}
-      >
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800 }}>{ticket.title}</h1>
-          <div style={{ marginTop: 6, opacity: 0.85 }}>
-            Signed in as <b>{email || "(no email)"}</b> — role <b>{role}</b>
-            {isAdmin ? " (view-only)" : null}
-          </div>
-        </div>
-
-        <button onClick={loadAll} disabled={loading || updating} style={{ height: 36 }}>
-          Refresh
-        </button>
-      </div>
-
-      <div style={{ marginTop: 10, display: "flex", gap: 12, flexWrap: "wrap", opacity: 0.9 }}>
-        {!isResolved ? (
-          <span>
-            status: <b>{ticket.status}</b>
-          </span>
-        ) : null}
-
-        {isResolved ? (
-          <span
-            style={{
-              fontSize: 12,
-              fontWeight: 800,
-              border: "1px solid #ddd",
-              borderRadius: 999,
-              padding: "2px 8px",
-              opacity: 0.9,
-            }}
+    <div className={styles.page}>
+      <main className={styles.shell}>
+        <nav className={styles.topbar} aria-label="Ticket navigation">
+          <button
+            type="button"
+            className={styles.backButton}
+            onClick={() => router.push("/my-tickets")}
           >
-            RESOLVED
-          </span>
-        ) : null}
+            ← All tickets
+          </button>
 
-        {isResolved && resolvedAt ? (
-          <span>
-            resolved at: <b>{resolvedAt}</b>
-          </span>
-        ) : null}
+          <div className={styles.topbarActions}>
+            <span className={styles.signedIn}>
+              {email || "Signed in"} · {role}
+              {isAdmin ? " (view-only)" : ""}
+            </span>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              onClick={loadAll}
+              disabled={loading || updating}
+            >
+              Refresh
+            </button>
+          </div>
+        </nav>
 
-        <span>
-          priority: <b>{ticket.priority}</b>
-        </span>
-        <span>
-          category: <b>{ticket.category}</b>
-        </span>
-      </div>
+        {error ? <div className={styles.alert}>{error}</div> : null}
+        {notice ? <div className={styles.notice}>{notice}</div> : null}
 
-      <div style={{ marginTop: 12, whiteSpace: "pre-wrap" }}>{ticket.description}</div>
+        <header className={styles.ticketHeader}>
+          <div className={styles.eyebrow}>
+            Support ticket · #{ticket.id.slice(0, 8)}
+          </div>
+          <h1 className={styles.ticketTitle}>{ticket.title}</h1>
+          <div className={styles.badgeRow}>
+            <span className={`${styles.badge} ${statusClass}`}>
+              {formatStatus(ticket.status)}
+            </span>
+            <span className={`${styles.badge} ${styles.neutralBadge}`}>
+              {formatStatus(ticket.priority)} priority
+            </span>
+            <span className={`${styles.badge} ${styles.neutralBadge}`}>
+              {ticket.category}
+            </span>
+          </div>
+        </header>
 
-      <div style={{ marginTop: 16, display: "flex", gap: 14, flexWrap: "wrap", opacity: 0.9 }}>
-        <span>
-          requester: <b>{requesterLabel}</b>
-        </span>
-        <span>
-          assignee: <b>{assigneeLabel}</b>
-        </span>
-        {ticket.location ? (
-          <span>
-            location: <b>{ticket.location}</b>
-          </span>
-        ) : null}
-        <span>
-          created: <b>{new Date(ticket.created_at).toLocaleString()}</b>
-        </span>
-      </div>
+        <div className={styles.contentGrid}>
+          <div className={styles.mainColumn}>
+            <section className={styles.card}>
+              <div className={styles.cardHeader}>
+                <h2 className={styles.cardTitle}>Issue description</h2>
+              </div>
+              <div className={styles.cardBody}>
+                <p className={styles.description}>{ticket.description}</p>
+              </div>
+            </section>
 
-      {isStaff && requesterEmail ? (
-        <div style={{ marginTop: 6, opacity: 0.75, fontSize: 12 }}>
-          requester email: <b>{requesterEmail}</b>
-        </div>
-      ) : null}
+            <section className={styles.card}>
+              <div className={styles.cardHeader}>
+                <div>
+                  <h2 className={styles.cardTitle}>Conversation</h2>
+                  <p className={styles.cardSubtitle}>
+                    Updates between the requester and support team
+                  </p>
+                </div>
+                <span className={styles.commentCount}>{comments.length}</span>
+              </div>
 
-      {isStaff && assigneeEmail ? (
-        <div style={{ marginTop: 2, opacity: 0.75, fontSize: 12 }}>
-          assignee email: <b>{assigneeEmail}</b>
-        </div>
-      ) : null}
-
-      {/* Staff actions (disabled entirely if resolved, per your preference) */}
-      {isStaff ? (
-        <div style={{ marginTop: 20, borderTop: "1px solid #ddd", paddingTop: 14 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 700 }}>Staff actions</h2>
-
-          {!canDoActions ? (
-            <div style={{ marginTop: 8, opacity: 0.75, fontSize: 12 }}>
-              This ticket is resolved. No further actions allowed.
-            </div>
-          ) : isTech ? (
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 10, alignItems: "center" }}>
-              {!isResolved ? (
-                <select
-                  value={ticket.status}
-                  onChange={(e) => changeStatus(e.target.value)}
-                  disabled={updating}
-                  style={{ padding: 8 }}
-                >
-                  {STATUS_OPTIONS.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              ) : null}
-
-              {isMine ? (
-                <button onClick={unassignFromMe} disabled={updating}>
-                  Unassign
-                </button>
+              {comments.length === 0 ? (
+                <div className={styles.emptyState}>
+                  <div className={styles.emptyStateIcon} aria-hidden="true">
+                    💬
+                  </div>
+                  <strong>No replies yet</strong>
+                  <div>The conversation will appear here.</div>
+                </div>
               ) : (
-                <button onClick={assignToMe} disabled={updating}>
-                  Assign to me
-                </button>
+                <div className={styles.conversation}>
+                  {comments.map((comment) => {
+                    const authorName =
+                      displayNameFromProfile(comment.author) ??
+                      nameFromProfileId(comment.author_id) ??
+                      "Unknown user";
+                    const isOwnComment = comment.author_id === userId;
+                    const authorRole =
+                      comment.author_id === ticket.requester_id
+                        ? "Requester"
+                        : "Support";
+
+                    return (
+                      <article
+                        key={comment.id}
+                        className={`${styles.comment} ${
+                          isOwnComment ? styles.ownComment : ""
+                        }`}
+                      >
+                        <div className={styles.avatar} aria-hidden="true">
+                          {initialsFor(authorName)}
+                        </div>
+                        <div className={styles.commentContent}>
+                          <div className={styles.commentMeta}>
+                            <span className={styles.commentAuthor}>
+                              {isOwnComment ? "You" : authorName}
+                            </span>
+                            <span>·</span>
+                            <span>{authorRole}</span>
+                            <span>·</span>
+                            <time dateTime={comment.created_at}>
+                              {new Date(comment.created_at).toLocaleString()}
+                            </time>
+                          </div>
+                          <div className={styles.commentBubble}>
+                            {comment.body}
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
               )}
-            </div>
-          ) : (
-            <div style={{ opacity: 0.75, marginTop: 8 }}>Admin is view-only.</div>
-          )}
+
+              {canComment ? (
+                <div className={styles.composer}>
+                  <label className={styles.composerLabel} htmlFor="ticket-reply">
+                    Add a reply
+                  </label>
+                  <textarea
+                    id="ticket-reply"
+                    value={commentBody}
+                    onChange={(event) => setCommentBody(event.target.value)}
+                    placeholder="Write a clear update or ask a follow-up question…"
+                    disabled={postingComment}
+                  />
+                  <div className={styles.composerFooter}>
+                    <span className={styles.composerHint}>
+                      Everyone with access to this ticket can see your reply.
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.primaryButton}
+                      onClick={postComment}
+                      disabled={postingComment || !commentBody.trim()}
+                    >
+                      {postingComment ? "Posting…" : "Post reply"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className={styles.disabledMessage}>
+                  {isResolved
+                    ? "This ticket is resolved, so the conversation is closed."
+                    : "You do not have permission to reply to this ticket."}
+                </div>
+              )}
+            </section>
+          </div>
+
+          <aside className={styles.sideColumn}>
+            <section className={styles.card}>
+              <div className={styles.cardHeader}>
+                <h2 className={styles.cardTitle}>Ticket details</h2>
+              </div>
+              <div className={styles.cardBody}>
+                <dl className={styles.detailsList}>
+                  <div className={styles.detailRow}>
+                    <dt className={styles.detailLabel}>Requester</dt>
+                    <dd className={styles.detailValue}>{requesterLabel}</dd>
+                  </div>
+                  <div className={styles.detailRow}>
+                    <dt className={styles.detailLabel}>Assigned to</dt>
+                    <dd className={styles.detailValue}>{assigneeLabel}</dd>
+                  </div>
+                  {ticket.location ? (
+                    <div className={styles.detailRow}>
+                      <dt className={styles.detailLabel}>Location</dt>
+                      <dd className={styles.detailValue}>{ticket.location}</dd>
+                    </div>
+                  ) : null}
+                  <div className={styles.detailRow}>
+                    <dt className={styles.detailLabel}>Created</dt>
+                    <dd className={styles.detailValue}>
+                      {new Date(ticket.created_at).toLocaleString()}
+                    </dd>
+                  </div>
+                  {ticket.closed_at ? (
+                    <div className={styles.detailRow}>
+                      <dt className={styles.detailLabel}>Resolved</dt>
+                      <dd className={styles.detailValue}>
+                        {new Date(ticket.closed_at).toLocaleString()}
+                      </dd>
+                    </div>
+                  ) : null}
+                  {isStaff && requesterEmail ? (
+                    <div className={styles.detailRow}>
+                      <dt className={styles.detailLabel}>Email</dt>
+                      <dd className={styles.detailValue}>{requesterEmail}</dd>
+                    </div>
+                  ) : null}
+                  {isStaff && assigneeEmail ? (
+                    <div className={styles.detailRow}>
+                      <dt className={styles.detailLabel}>Tech email</dt>
+                      <dd className={styles.detailValue}>{assigneeEmail}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+              </div>
+            </section>
+
+            {isStaff ? (
+              <section className={styles.card}>
+                <div className={styles.cardHeader}>
+                  <h2 className={styles.cardTitle}>Staff actions</h2>
+                </div>
+                <div className={styles.cardBody}>
+                  {isResolved ? (
+                    <p className={styles.disabledMessage}>
+                      No actions are available for a resolved ticket.
+                    </p>
+                  ) : isTech ? (
+                    <div className={styles.staffControls}>
+                      <label className={styles.detailLabel} htmlFor="ticket-status">
+                        Status
+                      </label>
+                      <select
+                        id="ticket-status"
+                        value={ticket.status}
+                        onChange={(event) => changeStatus(event.target.value)}
+                        disabled={updating}
+                      >
+                        {STATUS_OPTIONS.map((status) => (
+                          <option key={status} value={status}>
+                            {formatStatus(status)}
+                          </option>
+                        ))}
+                      </select>
+                      {isMine ? (
+                        <button
+                          type="button"
+                          className={styles.actionButton}
+                          onClick={unassignFromMe}
+                          disabled={updating}
+                        >
+                          Unassign from me
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className={styles.actionButton}
+                          onClick={assignToMe}
+                          disabled={updating}
+                        >
+                          Assign to me
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <p className={styles.disabledMessage}>
+                      Administrators have view-only access.
+                    </p>
+                  )}
+                </div>
+              </section>
+            ) : null}
+
+            <section className={styles.card}>
+              <div className={styles.cardHeader}>
+                <h2 className={styles.cardTitle}>Activity</h2>
+              </div>
+              <div className={styles.cardBody}>
+                {events.length === 0 ? (
+                  <p className={styles.cardSubtitle}>No activity recorded yet.</p>
+                ) : (
+                  <div className={styles.timeline}>
+                    {events.map((event) => {
+                      const actorName =
+                        displayNameFromProfile(event.actor) ??
+                        nameFromProfileId(event.actor_id) ??
+                        "Unknown user";
+
+                      return (
+                        <div key={event.id} className={styles.timelineItem}>
+                          <span className={styles.timelineDot} aria-hidden="true" />
+                          <div className={styles.timelineText}>
+                            {formatEvent(event)}
+                          </div>
+                          <div className={styles.timelineMeta}>
+                            {actorName} · {new Date(event.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </section>
+          </aside>
         </div>
-      ) : null}
-
-      {/* Comments (disabled entirely if resolved, per your preference) */}
-      <div style={{ marginTop: 22, borderTop: "1px solid #ddd", paddingTop: 14 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700 }}>Comments</h2>
-
-        {canComment ? (
-          <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-            <textarea
-              ref={commentRef}
-              value={commentBody}
-              onChange={(e) => setCommentBody(e.target.value)}
-              placeholder="Add a comment…"
-              style={{ padding: 10, minHeight: 80 }}
-              disabled={postingComment}
-            />
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={postComment} disabled={postingComment || !commentBody.trim()}>
-                {postingComment ? "Posting…" : "Post comment"}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div style={{ marginTop: 10, opacity: 0.75, fontSize: 12 }}>
-            {isResolved ? "(This ticket is resolved — comments are disabled.)" : "(You can’t comment on this ticket.)"}
-          </div>
-        )}
-
-        {comments.length === 0 ? (
-          <div style={{ marginTop: 12, opacity: 0.75 }}>No comments yet.</div>
-        ) : (
-          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-            {comments.map((c) => {
-              const whoLabel =
-                displayNameFromProfile(c.author) ??
-                nameFromProfileId(c.author_id) ??
-                c.author_id;
-
-              return (
-                <div key={c.id} style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 800 }}>{whoLabel}</div>
-                    <div style={{ opacity: 0.75, fontSize: 12 }}>{new Date(c.created_at).toLocaleString()}</div>
-                  </div>
-                  <div style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>{c.body}</div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* History */}
-      <div style={{ marginTop: 22, borderTop: "1px solid #ddd", paddingTop: 14 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700 }}>History</h2>
-
-        {events.length === 0 ? (
-          <div style={{ marginTop: 12, opacity: 0.75 }}>No history yet.</div>
-        ) : (
-          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-            {events.map((e) => {
-              const whoLabel =
-                displayNameFromProfile(e.actor) ??
-                nameFromProfileId(e.actor_id) ??
-                e.actor_id;
-
-              return (
-                <div key={e.id} style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 800 }}>{whoLabel}</div>
-                    <div style={{ opacity: 0.75, fontSize: 12 }}>{new Date(e.created_at).toLocaleString()}</div>
-                  </div>
-                  <div style={{ marginTop: 6 }}>{formatEvent(e)}</div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {error ? <div style={{ marginTop: 12, color: "crimson" }}>{error}</div> : null}
-      {notice ? <div style={{ marginTop: 12 }}>{notice}</div> : null}
+      </main>
     </div>
   );
 }

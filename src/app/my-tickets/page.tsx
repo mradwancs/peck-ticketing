@@ -27,6 +27,11 @@ type ProfileRow = {
   role: string | null;
 };
 
+type UnreadCommentCountRow = {
+  ticket_id: string;
+  unread_count: number;
+};
+
 function emailToName(email: string) {
   const left = email.split("@")[0] ?? email;
   return left.replace(/[._-]+/g, " ").trim();
@@ -78,6 +83,19 @@ function resolvedPillOverride(): React.CSSProperties {
   };
 }
 
+function errorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return fallback;
+}
+
 export default function MyTicketsPage() {
   const router = useRouter();
 
@@ -98,6 +116,9 @@ export default function MyTicketsPage() {
   }, []);
 
   const [tickets, setTickets] = useState<TicketRow[]>([]);
+  const [unreadCommentCounts, setUnreadCommentCounts] = useState<
+    Record<string, number>
+  >({});
 
   const [error, setError] = useState<string | null>(null);
   const [createNotice, setCreateNotice] = useState<string | null>(null);
@@ -196,6 +217,29 @@ export default function MyTicketsPage() {
     setProfileById((prev) => ({ ...prev, ...map }));
   }
 
+  async function loadUnreadCommentCounts() {
+    if (!userId) {
+      setUnreadCommentCounts({});
+      return;
+    }
+
+    const { data, error } = await supabase.rpc(
+      "unread_ticket_comment_counts"
+    );
+
+    if (error) {
+      // Keep the ticket list usable if the migration has not been applied yet.
+      console.warn("Could not load unread comment counts:", error.message);
+      return;
+    }
+
+    const nextCounts: Record<string, number> = {};
+    for (const row of (data ?? []) as UnreadCommentCountRow[]) {
+      if (row.unread_count > 0) nextCounts[row.ticket_id] = row.unread_count;
+    }
+    setUnreadCommentCounts(nextCounts);
+  }
+
   async function loadTickets() {
     setLoadingTickets(true);
     setError(null);
@@ -219,6 +263,8 @@ export default function MyTicketsPage() {
       const rows = data ?? [];
       setTickets(rows);
 
+      await loadUnreadCommentCounts();
+
       const needsResolve = rows.filter(
         (t) =>
           t.assigned_to &&
@@ -229,8 +275,8 @@ export default function MyTicketsPage() {
       await Promise.all(
         needsResolve.map((t) => resolveEmailsForTicket(t.id, [t.assigned_to!]))
       );
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to load tickets.");
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError, "Failed to load tickets."));
     } finally {
       setLoadingTickets(false);
     }
@@ -240,6 +286,27 @@ export default function MyTicketsPage() {
     if (!checkingAuth) loadTickets();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checkingAuth]);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    const channel = supabase
+      .channel(`ticket-comment-notifications:${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "ticket_comments" },
+        () => {
+          void loadUnreadCommentCounts();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+    // Subscribe once for the active user; the callback reads the latest counts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   async function createTicket() {
     setCreating(true);
@@ -272,8 +339,8 @@ export default function MyTicketsPage() {
 
       setCreateNotice("Ticket created.");
       await loadTickets();
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to create ticket.");
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError, "Failed to create ticket."));
     } finally {
       setCreating(false);
     }
@@ -308,8 +375,8 @@ export default function MyTicketsPage() {
       if (!profileById[userId]) {
         await resolveEmailsForTicket(ticketId, [userId]);
       }
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to assign ticket.");
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError, "Failed to assign ticket."));
     } finally {
       setUpdatingTicketId(null);
     }
@@ -350,8 +417,8 @@ export default function MyTicketsPage() {
         prev.map((t) => (t.id === ticketId ? { ...t, assigned_to: null } : t))
       );
       setActionNotice("Unassigned.");
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to unassign ticket.");
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError, "Failed to unassign ticket."));
     } finally {
       setUpdatingTicketId(null);
     }
@@ -384,8 +451,8 @@ export default function MyTicketsPage() {
         prev.map((t) => (t.id === ticketId ? { ...t, status: newStatus } : t))
       );
       setActionNotice("Status updated.");
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to update status.");
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError, "Failed to update status."));
     } finally {
       setUpdatingTicketId(null);
     }
@@ -451,6 +518,7 @@ export default function MyTicketsPage() {
     const isAssignedToOther = !!t.assigned_to && !isMine;
 
     const rowUpdating = updatingTicketId === t.id;
+    const unreadCommentCount = unreadCommentCounts[t.id] ?? 0;
 
     const cardStyle: React.CSSProperties = {
       border: "1px solid #ddd",
@@ -475,7 +543,10 @@ export default function MyTicketsPage() {
           cursor: "pointer",
           transition: "box-shadow 120ms ease, transform 120ms ease",
         }}
-        onClick={() => router.push(`/tickets/${t.id}`)}
+        onClick={() => {
+          setUnreadCommentCounts((prev) => ({ ...prev, [t.id]: 0 }));
+          router.push(`/tickets/${t.id}`);
+        }}
         onMouseEnter={(e) => {
           e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.08)";
           e.currentTarget.style.transform = "translateY(-1px)";
@@ -502,6 +573,37 @@ export default function MyTicketsPage() {
             }}
           >
             <div style={{ fontWeight: 900 }}>{t.title}</div>
+
+            {unreadCommentCount > 0 ? (
+              <span
+                aria-label={`${unreadCommentCount} unread ${
+                  unreadCommentCount === 1 ? "response" : "responses"
+                }`}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "4px 9px",
+                  borderRadius: 999,
+                  background: "#dc2626",
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: 900,
+                  boxShadow: "0 2px 6px rgba(220, 38, 38, 0.25)",
+                }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: 999,
+                    background: "#fff",
+                  }}
+                />
+                {unreadCommentCount} new {unreadCommentCount === 1 ? "reply" : "replies"}
+              </span>
+            ) : null}
 
             <span
               style={{
