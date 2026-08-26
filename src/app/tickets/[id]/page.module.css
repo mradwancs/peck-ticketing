@@ -242,6 +242,206 @@
   white-space: pre-wrap;
 }
 
+.photoEmptyState {
+  padding: 10px 0 18px;
+  color: #718096;
+  font-size: 13px;
+  text-align: center;
+}
+
+.photoGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.photoCard {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #dfe7f1;
+  border-radius: 11px;
+  background: #fff;
+}
+
+.photoOpenButton {
+  position: relative;
+  display: grid;
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+  place-items: center;
+  border: 0;
+  background: #e8eef6;
+  cursor: zoom-in;
+}
+
+.photoOpenButton:disabled {
+  cursor: default;
+}
+
+.photoThumbnail {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  transition: transform 180ms ease;
+}
+
+.photoOpenButton:hover:not(:disabled) .photoThumbnail {
+  transform: scale(1.025);
+}
+
+.photoViewLabel {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.78);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.photoOpenButton:hover .photoViewLabel,
+.photoOpenButton:focus-visible .photoViewLabel {
+  opacity: 1;
+}
+
+.photoUnavailable {
+  display: grid;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  padding: 12px;
+  place-items: center;
+  color: #718096;
+  font-size: 12px;
+}
+
+.photoCaption {
+  padding: 9px 10px 10px;
+}
+
+.photoName {
+  overflow: hidden;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photoMeta {
+  overflow: hidden;
+  margin-top: 3px;
+  color: #8491a3;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photoDeleteButton {
+  margin-top: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #b91c1c;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.photoDeleteButton:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.photoDeleteButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.attachmentUploader {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e8edf4;
+}
+
+.uploadFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.lightboxBackdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  padding: 24px;
+  place-items: center;
+  background: rgba(4, 10, 22, 0.82);
+  backdrop-filter: blur(5px);
+}
+
+.lightbox {
+  position: relative;
+  display: grid;
+  width: min(980px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  background: #0f172a;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.lightboxImage {
+  display: block;
+  width: 100%;
+  max-height: calc(100vh - 135px);
+  object-fit: contain;
+  background: #020617;
+}
+
+.lightboxClose {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.82);
+  color: #fff;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lightboxCaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 15px;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.lightboxCaption span {
+  color: #94a3b8;
+}
+
 .commentCount {
   min-width: 28px;
   padding: 4px 9px;
@@ -555,5 +755,19 @@
 
   .detailRow {
     grid-template-columns: 82px minmax(0, 1fr);
+  }
+
+  .photoGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .uploadFooter,
+  .lightboxCaption {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .lightboxBackdrop {
+    padding: 10px;
   }
 }

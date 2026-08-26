@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import TicketImagePicker from "@/components/TicketImagePicker";
+import {
+  TICKET_ATTACHMENT_BUCKET,
+  uploadTicketImages,
+  type PreparedTicketImage,
+} from "@/lib/ticketAttachments";
 import styles from "./page.module.css";
 
 type TicketRow = {
@@ -46,6 +52,20 @@ type EventRow = {
   new_value: string | null;
   created_at: string;
   actor?: { email: string | null; full_name: string | null } | null;
+};
+
+type TicketAttachmentRow = {
+  id: string;
+  ticket_id: string;
+  uploader_id: string;
+  storage_path: string;
+  file_name: string;
+  mime_type: string;
+  file_size: number;
+  width: number | null;
+  height: number | null;
+  created_at: string;
+  signedUrl: string | null;
 };
 
 const STATUS_OPTIONS = [
@@ -93,6 +113,11 @@ function initialsFor(name: string) {
     .join("");
 }
 
+function formatFileSize(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) return error.message;
   if (
@@ -127,6 +152,7 @@ export default function TicketDetailPage() {
   const [ticket, setTicket] = useState<TicketRow | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [comments, setComments] = useState<CommentRow[]>([]);
+  const [attachments, setAttachments] = useState<TicketAttachmentRow[]>([]);
   const [profileById, setProfileById] = useState<
     Record<string, { email: string | null; full_name: string | null }>
   >({});
@@ -136,6 +162,14 @@ export default function TicketDetailPage() {
   const [updating, setUpdating] = useState(false);
   const [commentBody, setCommentBody] = useState("");
   const [postingComment, setPostingComment] = useState(false);
+  const [pendingImages, setPendingImages] = useState<PreparedTicketImage[]>([]);
+  const [preparingImages, setPreparingImages] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [deletingAttachmentId, setDeletingAttachmentId] = useState<
+    string | null
+  >(null);
+  const [selectedAttachment, setSelectedAttachment] =
+    useState<TicketAttachmentRow | null>(null);
 
   useEffect(() => {
     const run = async () => {
@@ -177,6 +211,16 @@ export default function TicketDetailPage() {
     // loadAll intentionally runs after authentication finishes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checkingAuth]);
+
+  useEffect(() => {
+    if (!selectedAttachment) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedAttachment(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selectedAttachment]);
 
   function nameFromProfileId(id: string | null | undefined) {
     if (!id) return null;
@@ -283,6 +327,54 @@ export default function TicketDetailPage() {
     }
   }
 
+  async function loadTicketAttachments() {
+    const { data, error: attachmentsError } = await supabase
+      .from("ticket_attachments")
+      .select(
+        "id,ticket_id,uploader_id,storage_path,file_name,mime_type,file_size,width,height,created_at"
+      )
+      .eq("ticket_id", ticketId)
+      .order("created_at", { ascending: true })
+      .returns<Array<Omit<TicketAttachmentRow, "signedUrl">>>();
+
+    if (attachmentsError) {
+      // Keep existing tickets usable until the attachment migration is applied.
+      console.warn("Could not load ticket attachments:", attachmentsError.message);
+      setAttachments([]);
+      return [] as TicketAttachmentRow[];
+    }
+
+    const rows = data ?? [];
+    if (rows.length === 0) {
+      setAttachments([]);
+      return [] as TicketAttachmentRow[];
+    }
+
+    const { data: signedData, error: signedUrlError } = await supabase.storage
+      .from(TICKET_ATTACHMENT_BUCKET)
+      .createSignedUrls(
+        rows.map((attachment) => attachment.storage_path),
+        60 * 60
+      );
+
+    if (signedUrlError) {
+      console.warn("Could not create attachment links:", signedUrlError.message);
+    }
+
+    const signedUrlByPath = new Map(
+      ((signedData ?? []) as Array<{ path: string; signedUrl: string }>).map(
+        (signed) => [signed.path, signed.signedUrl]
+      )
+    );
+    const attachmentsWithUrls = rows.map((attachment) => ({
+      ...attachment,
+      signedUrl: signedUrlByPath.get(attachment.storage_path) ?? null,
+    }));
+
+    setAttachments(attachmentsWithUrls);
+    return attachmentsWithUrls;
+  }
+
   async function loadAll() {
     setLoading(true);
     setError(null);
@@ -336,6 +428,8 @@ export default function TicketDetailPage() {
       setComments(commentRows ?? []);
       await markRequesterCommentsRead(ticketData, commentRows ?? []);
 
+      const attachmentRows = await loadTicketAttachments();
+
       const assignedChangeIds: string[] = [];
       for (const event of eventRows ?? []) {
         if (event.event_type !== "assigned_changed") continue;
@@ -348,6 +442,7 @@ export default function TicketDetailPage() {
       await resolveProfilesForTicket([
         ...(eventRows ?? []).map((event) => event.actor_id),
         ...(commentRows ?? []).map((comment) => comment.author_id),
+        ...attachmentRows.map((attachment) => attachment.uploader_id),
         ticketData.requester_id,
         ...(ticketData.assigned_to ? [ticketData.assigned_to] : []),
         ...assignedChangeIds,
@@ -460,6 +555,78 @@ export default function TicketDetailPage() {
     }
   }
 
+  async function uploadAttachments() {
+    if (!userId || pendingImages.length === 0) return;
+
+    setUploadingImages(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const result = await uploadTicketImages(
+        supabase,
+        ticketId,
+        userId,
+        pendingImages
+      );
+      setPendingImages([]);
+      await loadAll();
+
+      if (result.errors.length > 0) {
+        setError(
+          `${result.errors.length} ${
+            result.errors.length === 1 ? "photo" : "photos"
+          } could not be uploaded. ${result.errors.join(" ")}`
+        );
+      }
+      if (result.uploadedCount > 0) {
+        setNotice(
+          `${result.uploadedCount} ${
+            result.uploadedCount === 1 ? "photo" : "photos"
+          } added.`
+        );
+      }
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError, "Failed to upload photos."));
+    } finally {
+      setUploadingImages(false);
+    }
+  }
+
+  async function deleteAttachment(attachment: TicketAttachmentRow) {
+    const confirmed = window.confirm(
+      `Delete ${attachment.file_name}? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeletingAttachmentId(attachment.id);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const { error: storageError } = await supabase.storage
+        .from(TICKET_ATTACHMENT_BUCKET)
+        .remove([attachment.storage_path]);
+      if (storageError) throw storageError;
+
+      const { error: metadataError } = await supabase
+        .from("ticket_attachments")
+        .delete()
+        .eq("id", attachment.id);
+      if (metadataError) throw metadataError;
+
+      if (selectedAttachment?.id === attachment.id) {
+        setSelectedAttachment(null);
+      }
+      await loadAll();
+      setNotice("Photo deleted.");
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError, "Failed to delete photo."));
+    } finally {
+      setDeletingAttachmentId(null);
+    }
+  }
+
   if (checkingAuth || loading) {
     return <div className={styles.loadingState}>Loading ticket…</div>;
   }
@@ -492,6 +659,7 @@ export default function TicketDetailPage() {
   const isResolved = ticket.status === "resolved";
   const canComment =
     !isResolved && (isTech || ticket.requester_id === userId);
+  const canUploadAttachments = canComment;
   const statusClass =
     ticket.status === "resolved"
       ? styles.statusResolved
@@ -558,6 +726,118 @@ export default function TicketDetailPage() {
               </div>
               <div className={styles.cardBody}>
                 <p className={styles.description}>{ticket.description}</p>
+              </div>
+            </section>
+
+            <section className={styles.card}>
+              <div className={styles.cardHeader}>
+                <div>
+                  <h2 className={styles.cardTitle}>Photos</h2>
+                  <p className={styles.cardSubtitle}>
+                    Visual details attached to this ticket
+                  </p>
+                </div>
+                <span className={styles.commentCount}>{attachments.length}/5</span>
+              </div>
+
+              <div className={styles.cardBody}>
+                {attachments.length === 0 ? (
+                  <div className={styles.photoEmptyState}>
+                    No photos have been attached to this ticket.
+                  </div>
+                ) : (
+                  <div className={styles.photoGrid}>
+                    {attachments.map((attachment) => {
+                      const uploaderName =
+                        nameFromProfileId(attachment.uploader_id) ?? "Ticket user";
+                      const canDelete =
+                        attachment.uploader_id === userId || isTech;
+
+                      return (
+                        <figure key={attachment.id} className={styles.photoCard}>
+                          <button
+                            type="button"
+                            className={styles.photoOpenButton}
+                            onClick={() => setSelectedAttachment(attachment)}
+                            disabled={!attachment.signedUrl}
+                            aria-label={`Open ${attachment.file_name}`}
+                          >
+                            {attachment.signedUrl ? (
+                              <>
+                                {/* Signed private-storage URLs are already optimized uploads. */}
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  className={styles.photoThumbnail}
+                                  src={attachment.signedUrl}
+                                  alt={attachment.file_name}
+                                />
+                                <span className={styles.photoViewLabel}>View</span>
+                              </>
+                            ) : (
+                              <span className={styles.photoUnavailable}>
+                                Preview unavailable
+                              </span>
+                            )}
+                          </button>
+                          <figcaption className={styles.photoCaption}>
+                            <div className={styles.photoName} title={attachment.file_name}>
+                              {attachment.file_name}
+                            </div>
+                            <div className={styles.photoMeta}>
+                              {uploaderName} · {formatFileSize(attachment.file_size)}
+                            </div>
+                            {canDelete ? (
+                              <button
+                                type="button"
+                                className={styles.photoDeleteButton}
+                                onClick={() => void deleteAttachment(attachment)}
+                                disabled={deletingAttachmentId === attachment.id}
+                              >
+                                {deletingAttachmentId === attachment.id
+                                  ? "Deleting…"
+                                  : "Delete"}
+                              </button>
+                            ) : null}
+                          </figcaption>
+                        </figure>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {canUploadAttachments ? (
+                  <div className={styles.attachmentUploader}>
+                    <TicketImagePicker
+                      value={pendingImages}
+                      onChange={setPendingImages}
+                      existingCount={attachments.length}
+                      disabled={uploadingImages}
+                      onBusyChange={setPreparingImages}
+                      label="Add more photos"
+                    />
+                    {pendingImages.length > 0 ? (
+                      <div className={styles.uploadFooter}>
+                        <span className={styles.composerHint}>
+                          Photos are added separately from written replies.
+                        </span>
+                        <button
+                          type="button"
+                          className={styles.primaryButton}
+                          onClick={() => void uploadAttachments()}
+                          disabled={uploadingImages || preparingImages}
+                        >
+                          {uploadingImages
+                            ? "Uploading…"
+                            : preparingImages
+                            ? "Preparing…"
+                            : `Upload ${pendingImages.length} ${
+                                pendingImages.length === 1 ? "photo" : "photos"
+                              }`}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </section>
 
@@ -802,6 +1082,42 @@ export default function TicketDetailPage() {
           </aside>
         </div>
       </main>
+
+      {selectedAttachment?.signedUrl ? (
+        <div
+          className={styles.lightboxBackdrop}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Photo ${selectedAttachment.file_name}`}
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setSelectedAttachment(null);
+          }}
+        >
+          <div className={styles.lightbox}>
+            <button
+              type="button"
+              className={styles.lightboxClose}
+              onClick={() => setSelectedAttachment(null)}
+              aria-label="Close photo"
+            >
+              ×
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              className={styles.lightboxImage}
+              src={selectedAttachment.signedUrl}
+              alt={selectedAttachment.file_name}
+            />
+            <div className={styles.lightboxCaption}>
+              <strong>{selectedAttachment.file_name}</strong>
+              <span>
+                {formatFileSize(selectedAttachment.file_size)} · Uploaded {" "}
+                {new Date(selectedAttachment.created_at).toLocaleString()}
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -80,3 +80,16 @@ Before deploying this feature, run
 `supabase/migrations/20260819000000_add_ticket_comment_reads.sql` in the
 Supabase SQL Editor. Projects linked through the Supabase CLI can apply it with
 `supabase db push` instead.
+
+## Ticket photo attachments
+
+Requesters and technicians can attach up to five photos while creating or
+working on an active ticket. Photos are compressed in the browser before being
+uploaded to a private Supabase Storage bucket. Requesters, technicians, and
+administrators with access to the ticket can view them; the uploader or a
+technician can delete them.
+
+Run `supabase/migrations/20260825000000_add_ticket_attachments.sql` in the
+Supabase SQL Editor before deploying this feature. The migration creates the
+private bucket, attachment metadata table, five-photo limit, and access
+policies.

@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import TicketImagePicker from "@/components/TicketImagePicker";
+import {
+  uploadTicketImages,
+  type PreparedTicketImage,
+} from "@/lib/ticketAttachments";
 
 type TicketRow = {
   id: string;
@@ -138,6 +143,8 @@ export default function MyTicketsPage() {
   const [category, setCategory] = useState("");
   const [priority, setPriority] = useState("");
   const [creating, setCreating] = useState(false);
+  const [pendingImages, setPendingImages] = useState<PreparedTicketImage[]>([]);
+  const [preparingImages, setPreparingImages] = useState(false);
 
   const headerButtonStyle: React.CSSProperties = {
     padding: "10px 14px",
@@ -313,6 +320,8 @@ export default function MyTicketsPage() {
     setError(null);
     setCreateNotice(null);
 
+    let createdTicketId: string | null = null;
+
     try {
       if (!userId) throw new Error("Not signed in.");
       const t = title.trim();
@@ -320,27 +329,71 @@ export default function MyTicketsPage() {
       if (!t) throw new Error("Title is required.");
       if (!d) throw new Error("Description is required.");
 
-      const { error } = await supabase.from("tickets").insert({
-        title: t,
-        description: d,
-        location: location.trim() || null,
-        category: category || "Other",
-        priority: priority || "normal",
-        requester_id: userId,
-      });
+      const { data: createdTicket, error } = await supabase
+        .from("tickets")
+        .insert({
+          title: t,
+          description: d,
+          location: location.trim() || null,
+          category: category || "Other",
+          priority: priority || "normal",
+          requester_id: userId,
+        })
+        .select("id")
+        .single<{ id: string }>();
 
       if (error) throw error;
+      createdTicketId = createdTicket.id;
+
+      const uploadResult = await uploadTicketImages(
+        supabase,
+        createdTicket.id,
+        userId,
+        pendingImages
+      );
 
       setTitle("");
       setDescription("");
       setLocation("");
       setCategory("Other");
       setPriority("normal");
+      setPendingImages([]);
 
-      setCreateNotice("Ticket created.");
+      if (uploadResult.errors.length > 0) {
+        setError(
+          `Ticket created, but ${uploadResult.errors.length} ${
+            uploadResult.errors.length === 1 ? "photo" : "photos"
+          } could not be uploaded. ${uploadResult.errors.join(" ")}`
+        );
+      }
+
+      setCreateNotice(
+        uploadResult.uploadedCount > 0
+          ? `Ticket created with ${uploadResult.uploadedCount} ${
+              uploadResult.uploadedCount === 1 ? "photo" : "photos"
+            }.`
+          : "Ticket created."
+      );
       await loadTickets();
     } catch (caughtError: unknown) {
-      setError(errorMessage(caughtError, "Failed to create ticket."));
+      if (createdTicketId) {
+        setTitle("");
+        setDescription("");
+        setLocation("");
+        setCategory("Other");
+        setPriority("normal");
+        setPendingImages([]);
+        setCreateNotice("Ticket created without all selected photos.");
+        await loadTickets();
+      }
+      setError(
+        errorMessage(
+          caughtError,
+          createdTicketId
+            ? "The ticket was created, but its photos could not be uploaded."
+            : "Failed to create ticket."
+        )
+      );
     } finally {
       setCreating(false);
     }
@@ -926,6 +979,14 @@ export default function MyTicketsPage() {
             </select>
           </div>
 
+          <TicketImagePicker
+            value={pendingImages}
+            onChange={setPendingImages}
+            disabled={creating}
+            onBusyChange={setPreparingImages}
+            label="Photos (optional)"
+          />
+
           <div
             style={{
               display: "grid",
@@ -963,6 +1024,7 @@ export default function MyTicketsPage() {
               onClick={createTicket}
               disabled={
                 creating ||
+                preparingImages ||
                 !title.trim() ||
                 !description.trim() ||
                 !category ||
@@ -970,7 +1032,13 @@ export default function MyTicketsPage() {
               }
               style={{ padding: 10 }}
             >
-              {creating ? "Creating…" : "Submit ticket"}
+              {creating
+                ? pendingImages.length > 0
+                  ? "Creating ticket and uploading photos…"
+                  : "Creating…"
+                : preparingImages
+                ? "Preparing photos…"
+                : "Submit ticket"}
             </button>
           </div>
 
