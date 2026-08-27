@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import ThemeToggle from "@/components/ThemeToggle";
 import TicketImagePicker from "@/components/TicketImagePicker";
 import {
   TICKET_ATTACHMENT_BUCKET,
@@ -16,6 +17,7 @@ type TicketRow = {
   title: string;
   description: string;
   location: string | null;
+  building: "main" | "prek";
   category: string;
   status: string;
   priority: string;
@@ -385,7 +387,7 @@ export default function TicketDetailPage() {
         .from("tickets")
         .select(
           `
-          id,title,description,location,category,status,priority,
+          id,title,description,location,building,category,status,priority,
           requester_id,assigned_to,created_at,updated_at,closed_at,
           requester:requester_id(email, full_name),
           assignee:assigned_to(email, full_name)
@@ -472,6 +474,29 @@ export default function TicketDetailPage() {
       setNotice("Status updated.");
     } catch (caughtError: unknown) {
       setError(errorMessage(caughtError, "Failed to update status."));
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  async function changeBuilding(newBuilding: "main" | "prek") {
+    if (!isTech || !ticket) return;
+
+    setUpdating(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const { error: updateError } = await supabase
+        .from("tickets")
+        .update({ building: newBuilding })
+        .eq("id", ticket.id);
+      if (updateError) throw updateError;
+
+      setTicket({ ...ticket, building: newBuilding });
+      setNotice("Building updated.");
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError, "Failed to update building."));
     } finally {
       setUpdating(false);
     }
@@ -686,6 +711,7 @@ export default function TicketDetailPage() {
               {email || "Signed in"} · {role}
               {isAdmin ? " (view-only)" : ""}
             </span>
+            <ThemeToggle />
             <button
               type="button"
               className={styles.secondaryButton}
@@ -714,6 +740,17 @@ export default function TicketDetailPage() {
             </span>
             <span className={`${styles.badge} ${styles.neutralBadge}`}>
               {ticket.category}
+            </span>
+            <span
+              className={`${styles.badge} ${
+                ticket.building === "prek"
+                  ? styles.prekBadge
+                  : styles.neutralBadge
+              }`}
+            >
+              {ticket.building === "prek"
+                ? "Pre-K Building"
+                : "Main Building"}
             </span>
           </div>
         </header>
@@ -963,6 +1000,14 @@ export default function TicketDetailPage() {
                     </div>
                   ) : null}
                   <div className={styles.detailRow}>
+                    <dt className={styles.detailLabel}>Building</dt>
+                    <dd className={styles.detailValue}>
+                      {ticket.building === "prek"
+                        ? "Pre-K Building"
+                        : "Main Building"}
+                    </dd>
+                  </div>
+                  <div className={styles.detailRow}>
                     <dt className={styles.detailLabel}>Created</dt>
                     <dd className={styles.detailValue}>
                       {new Date(ticket.created_at).toLocaleString()}
@@ -1018,6 +1063,20 @@ export default function TicketDetailPage() {
                             {formatStatus(status)}
                           </option>
                         ))}
+                      </select>
+                      <label className={styles.detailLabel} htmlFor="ticket-building">
+                        Building
+                      </label>
+                      <select
+                        id="ticket-building"
+                        value={ticket.building}
+                        onChange={(event) =>
+                          changeBuilding(event.target.value as "main" | "prek")
+                        }
+                        disabled={updating}
+                      >
+                        <option value="main">Main Building</option>
+                        <option value="prek">Pre-K Building</option>
                       </select>
                       {isMine ? (
                         <button

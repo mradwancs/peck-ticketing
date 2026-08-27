@@ -2,10 +2,10 @@
   display: grid;
   gap: 11px;
   padding: 14px;
-  border: 1px dashed #b9c6d8;
+  border: 1px dashed var(--border-strong);
   border-radius: 12px;
-  background: #f8fafc;
-  color: #172033;
+  background: var(--surface-raised);
+  color: var(--text);
 }
 
 .headingRow {
@@ -16,14 +16,14 @@
 }
 
 .label {
-  color: #263449;
+  color: var(--text);
   font-size: 14px;
   font-weight: 800;
 }
 
 .hint {
   margin-top: 3px;
-  color: #718096;
+  color: var(--text-muted);
   font-size: 12px;
 }
 
@@ -31,8 +31,8 @@
   min-width: 42px;
   padding: 4px 8px;
   border-radius: 999px;
-  background: #e8eef8;
-  color: #475569;
+  background: var(--surface-muted);
+  color: var(--text-muted);
   font-size: 12px;
   font-weight: 800;
   text-align: center;
@@ -59,15 +59,15 @@
 }
 
 .cameraButton {
-  border: 1px solid #1d4ed8;
-  background: #1d4ed8;
+  border: 1px solid var(--accent);
+  background: var(--accent);
   color: #fff;
 }
 
 .galleryButton {
-  border: 1px solid #cbd5e1;
-  background: #fff;
-  color: #334155;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
 }
 
 .cameraButton:hover:not(:disabled) {
@@ -75,8 +75,8 @@
 }
 
 .galleryButton:hover:not(:disabled) {
-  border-color: #94a3b8;
-  background: #f8fafc;
+  border-color: var(--accent);
+  background: var(--surface-raised);
 }
 
 .cameraButton:disabled,
@@ -96,9 +96,9 @@
   position: relative;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid #d8e0eb;
+  border: 1px solid var(--border);
   border-radius: 10px;
-  background: #fff;
+  background: var(--surface);
 }
 
 .previewImage {
@@ -106,7 +106,7 @@
   width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
-  background: #e8eef6;
+  background: var(--surface-muted);
 }
 
 .removeButton {
@@ -130,7 +130,7 @@
 .fileName {
   overflow: hidden;
   padding: 6px 7px 7px;
-  color: #475569;
+  color: var(--text-muted);
   font-size: 10px;
   font-weight: 650;
   text-overflow: ellipsis;
@@ -148,7 +148,11 @@
 }
 
 .limitMessage {
-  color: #64748b;
+  color: var(--text-muted);
+}
+
+:global([data-theme="dark"]) .cameraButton {
+  color: #08111f;
 }
 
 @media (max-width: 480px) {

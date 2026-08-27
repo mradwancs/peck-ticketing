@@ -1,0 +1,38 @@
+.button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.button:hover {
+  border-color: var(--accent);
+  background: var(--surface-raised);
+}
+
+.icon {
+  font-size: 17px;
+  line-height: 1;
+}
+
+@media (max-width: 520px) {
+  .label {
+    display: none;
+  }
+
+  .button {
+    width: 40px;
+    padding: 8px;
+  }
+}
