@@ -114,7 +114,7 @@ export default function MyTicketsPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
-  const [building, setBuilding] = useState<Building>("main");
+  const [building, setBuilding] = useState<Building | "">("");
   const [category, setCategory] = useState("Other");
   const [priority, setPriority] = useState("normal");
   const [creating, setCreating] = useState(false);
@@ -237,6 +237,7 @@ export default function MyTicketsPage() {
       if (!userId) throw new Error("Not signed in.");
       if (!title.trim()) throw new Error("Title is required.");
       if (!description.trim()) throw new Error("Description is required.");
+      if (!building) throw new Error("Please select a building.");
       const { data: createdTicket, error: createError } = await supabase
         .from("tickets")
         .insert({
@@ -256,7 +257,7 @@ export default function MyTicketsPage() {
       setTitle("");
       setDescription("");
       setLocation("");
-      setBuilding("main");
+      setBuilding("");
       setCategory("Other");
       setPriority("normal");
       setPendingImages([]);
@@ -440,9 +441,9 @@ export default function MyTicketsPage() {
       <div className={styles.formGrid}>
         <label className={styles.fullField}><span>Title</span><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Brief summary of the issue" /></label>
         <label className={styles.fullField}><span>Description</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What happened, and what have you already tried?" /></label>
-        <fieldset className={`${styles.buildingField} ${styles.fullField}`}><legend>Building</legend><div className={styles.segmentedControl}>
-          <label className={building === "main" ? styles.segmentActive : ""}><input type="radio" name="building" value="main" checked={building === "main"} onChange={() => setBuilding("main")} /><span>Main Building</span></label>
-          <label className={building === "prek" ? styles.segmentActive : ""}><input type="radio" name="building" value="prek" checked={building === "prek"} onChange={() => setBuilding("prek")} /><span>Pre-K Building</span></label>
+        <fieldset className={`${styles.buildingField} ${styles.fullField}`}><legend>Building <span className={styles.requiredLabel}>Required</span></legend><div className={styles.segmentedControl}>
+          <label className={building === "main" ? styles.segmentActive : ""}><input type="radio" name="building" value="main" required checked={building === "main"} onChange={() => setBuilding("main")} /><span>Main Building</span></label>
+          <label className={building === "prek" ? styles.segmentActive : ""}><input type="radio" name="building" value="prek" required checked={building === "prek"} onChange={() => setBuilding("prek")} /><span>Pre-K Building</span></label>
         </div></fieldset>
         <label><span>Room or location</span><input value={location} onChange={(event) => setLocation(event.target.value)} placeholder="Example: Room 204" /></label>
         <label><span>Category</span><select value={category} onChange={(event) => setCategory(event.target.value)}>
@@ -454,7 +455,7 @@ export default function MyTicketsPage() {
         <div className={styles.fullField}><TicketImagePicker value={pendingImages} onChange={setPendingImages} disabled={creating} onBusyChange={setPreparingImages} label="Photos (optional)" /></div>
         <div className={`${styles.submitRow} ${styles.fullField}`}>
           {createNotice ? <span className={styles.inlineNotice}>{createNotice}</span> : <span />}
-          <button type="button" className={styles.primaryButton} onClick={() => void createTicket()} disabled={creating || preparingImages || !title.trim() || !description.trim()}>
+          <button type="button" className={styles.primaryButton} onClick={() => void createTicket()} disabled={creating || preparingImages || !title.trim() || !description.trim() || !building}>
             {creating ? pendingImages.length > 0 ? "Creating and uploading…" : "Creating…" : preparingImages ? "Preparing photos…" : "Submit ticket"}
           </button>
         </div>

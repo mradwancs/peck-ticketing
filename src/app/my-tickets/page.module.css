@@ -230,6 +230,19 @@
   border: 0;
 }
 
+.requiredLabel {
+  display: inline-flex;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .segmentedControl {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -241,6 +254,7 @@
 }
 
 .segmentedControl label {
+  position: relative;
   display: flex;
   min-height: 40px;
   align-items: center;
@@ -252,6 +266,14 @@
   font-size: 13px;
   font-weight: 780;
   cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease,
+    color 140ms ease, box-shadow 140ms ease;
+}
+
+.segmentedControl label:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--text);
 }
 
 .segmentedControl input {
@@ -262,10 +284,17 @@
 }
 
 .segmentedControl .segmentActive {
-  border-color: var(--border-strong);
-  background: var(--surface);
-  color: var(--text-strong);
-  box-shadow: 0 2px 7px rgba(31, 51, 73, 0.08);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 3px 10px rgba(31, 51, 73, 0.1);
+}
+
+.segmentedControl .segmentActive::after {
+  margin-left: 8px;
+  content: "✓ Selected";
+  font-size: 10px;
+  font-weight: 850;
 }
 
 .submitRow {
