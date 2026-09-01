@@ -1,14 +1,49 @@
 "use client";
 
+import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { useRouter } from "next/navigation";
+import styles from "./page.module.css";
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+  return "Sign in failed.";
+}
+
+function EyeIcon({ passwordVisible }: { passwordVisible: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="20"
+      height="20"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+      <circle cx="12" cy="12" r="2.5" />
+      {passwordVisible ? <path d="m4 4 16 16" /> : null}
+    </svg>
+  );
+}
 
 export default function LoginPage() {
   const router = useRouter();
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -20,12 +55,9 @@ export default function LoginPage() {
       .single();
 
     if (profileError) throw new Error(profileError.message);
-
-    if (profile?.must_change_password) {
-      router.replace("/change-password");
-    } else {
-      router.replace("/my-tickets");
-    }
+    router.replace(
+      profile?.must_change_password ? "/change-password" : "/my-tickets"
+    );
   }
 
   async function doSignIn() {
@@ -33,120 +65,104 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-      if (error) throw error;
+      const { data, error: signInError } =
+        await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+      if (signInError) throw signInError;
 
       const userId = data.session?.user?.id;
       if (!userId) throw new Error("No session returned after sign in.");
-
       await routeAfterAuth(userId);
-    } catch (err: any) {
-      setError(err?.message ?? "Sign in failed.");
+    } catch (caughtError: unknown) {
+      setError(errorMessage(caughtError));
     } finally {
       setBusy(false);
     }
   }
 
-  function goToRequestAccount() {
-    setError(null);
-    router.push("/request-account");
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (busy) return;
-    await doSignIn();
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!busy) await doSignIn();
   }
 
   return (
-    <div
-      style={{
-        maxWidth: 420,
-        margin: "10vh auto",
-        padding: 28,
-        background: "#ffffff",
-        border: "1px solid #e5e7eb",
-        borderRadius: 12,
-        boxShadow: "0 8px 20px rgba(0,0,0,0.05)",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: 24 }}>
-        <img src="/favicon.ico" alt="Peck IT Ticketing" style={{ width: 72 }} />
-      </div>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 12, color: "#111" }}>
-        IT Support Login
-      </h1>
+    <main className={styles.page}>
+      <section className={styles.loginCard} aria-labelledby="login-heading">
+        <div className={styles.logoWrap}>
+          <Image
+            src="/favicon.ico"
+            alt="Peck IT Ticketing"
+            width={72}
+            height={72}
+          />
+        </div>
 
-      <p style={{ marginBottom: 16, color: "#444", fontSize: 12}}>
-        Please sign in using your school email and the password provided to you. If you don't have an account, you can request one below.
-      </p>
+        <h1 id="login-heading">IT Support Login</h1>
+        <p className={styles.intro}>
+          Please sign in using your school email and the password provided to
+          you. If you don&apos;t have an account, you can request one below.
+        </p>
 
-      <form onSubmit={handleSubmit} style={{ display: "grid", gap: 10 }}>
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          autoComplete="email"
-          onChange={(e) => setEmail(e.target.value)}
-          style={{ padding: 12 }}
-        />
+        <form onSubmit={handleSubmit} className={styles.form}>
+          <label>
+            <span>Email</span>
+            <input
+              type="email"
+              placeholder="name@school.org"
+              value={email}
+              autoComplete="email"
+              onChange={(event) => setEmail(event.target.value)}
+            />
+          </label>
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          autoComplete="current-password"
-          onChange={(e) => setPassword(e.target.value)}
-          style={{ padding: 12 }}
-        />
+          <label>
+            <span>Password</span>
+            <div className={styles.passwordField}>
+              <input
+                type={passwordVisible ? "text" : "password"}
+                placeholder="Password"
+                value={password}
+                autoComplete="current-password"
+                onChange={(event) => setPassword(event.target.value)}
+              />
+              <button
+                type="button"
+                className={styles.passwordToggle}
+                onClick={() => setPasswordVisible((visible) => !visible)}
+                aria-label={passwordVisible ? "Hide password" : "Show password"}
+                aria-pressed={passwordVisible}
+                title={passwordVisible ? "Hide password" : "Show password"}
+              >
+                <EyeIcon passwordVisible={passwordVisible} />
+              </button>
+            </div>
+          </label>
 
-        <button
-          type="submit"
-          disabled={busy || !email.trim() || password.length < 6}
-          style={{
-            padding: "12px 16px",
-            borderRadius: 8,
-            border: "none",
-            background: "#2563eb",
-            color: "#fff",
-            fontWeight: 600,
-            fontSize: 14,
-            cursor: "pointer",
-            transition: "background 0.15s ease",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "#1d4ed8")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "#2563eb")}
-        >
-          {busy ? "Signing in..." : "Sign in"}
-        </button>
+          <button
+            type="submit"
+            className={styles.primaryButton}
+            disabled={busy || !email.trim() || password.length < 6}
+          >
+            {busy ? "Signing in…" : "Sign in"}
+          </button>
 
-        <button
-          type="button"
-          disabled={busy}
-          onClick={goToRequestAccount}
-          style={{
-            padding: "12px 16px",
-            borderRadius: 8,
-            border: "1px solid #d1d5db",
-            background: "#fff",
-            color: "#111",
-            fontWeight: 500,
-            fontSize: 14,
-            cursor: "pointer",
-            transition: "background 0.15s ease background-color black",
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            disabled={busy}
+            onClick={() => {
+              setError(null);
+              router.push("/request-account");
+            }}
+          >
+            Request an account
+          </button>
 
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = "#d0d4e0")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
-        >
-          Request an account
-        </button>
-      
-        {error && <p>{error}</p>}
-      </form>
-    </div>
+          {error ? <p className={styles.error}>{error}</p> : null}
+        </form>
+      </section>
+    </main>
   );
 }
