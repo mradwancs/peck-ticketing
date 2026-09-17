@@ -45,7 +45,7 @@ export default function ForgotPasswordPage() {
       </h1>
 
       <p style={{ opacity: 0.7, marginBottom: 16 }}>
-        For IT/Admin use only. All other staff sign in with their email and the universal password.
+        For IT/Admin use only. For help signing in, please contact IT support.
       </p>
 
       {submitted ? (

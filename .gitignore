@@ -41,5 +41,46 @@ yarn-error.log*
 next-env.d.ts
 
 
-#scripts
-/scripts
+# Local IDE and system files
+.idea/
+.vscode/
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.suo
+*.user
+*.swp
+*.swo
+*~
+
+# Logs and credentials
+*.log
+logs/
+*.key
+*.p12
+*.pfx
+.npmrc
+.netrc
+.pgpass
+credentials.json
+service-account*.json
+secrets/
+!.env.example
+
+# Database exports and backups; retain SQL migrations
+*.sql
+*.sql.*
+*.dump
+*.backup
+*.bak
+*.sqlite
+*.sqlite3
+*.db
+backups/
+dumps/
+!/supabase/migrations/
+!/supabase/migrations/*.sql
+
+# Supabase CLI local state
+/supabase/.temp/
+/supabase/.branches/

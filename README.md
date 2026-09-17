@@ -1,95 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Peck IT Ticketing
 
-## Getting Started
+A school IT support application for submitting and tracking tickets across the main and Pre-K buildings. Features include ticket conversations, unread replies, photo attachments, account requests, and role-based views for requesters, technicians, and administrators.
 
-First, run the development server:
+## Tech stack
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+Next.js 16 App Router, React 19, TypeScript, CSS Modules, and Supabase Auth, Postgres, Realtime, and private Storage. Dependencies are locked in `package-lock.json`; ESLint provides lint checks.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Local setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Use Node.js compatible with Next.js 16 and npm. The repository does not pin a Node.js version. A Supabase development project with the base database and Auth configuration below is also required.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Run `npm ci` to install locked dependencies.
+2. Copy `.env.example` to `.env.local` and replace its placeholders with development-project values.
+3. Prepare the database and Auth configuration below.
+4. Run `npm run dev` and open http://localhost:3000.
 
-## Learn More
+Run `npm run lint` and `npm run build` for checks. `npm start` serves a completed production build. No automated test script is defined.
 
-To learn more about Next.js, take a look at the following resources:
+## Environment variables
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Keep real configuration in the ignored `.env.local`. The example contains placeholders only. Restart development after changes; rebuild when browser-visible values change.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Variable | Visibility | Purpose |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Browser-visible | Supabase project URL, also used by keepalive. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser-visible | Public anon key. Database and Storage policies must enforce access. |
+| `NEXT_PUBLIC_ACCOUNT_REQUEST_REQUESTER_ID` | Browser-visible | Existing requester UUID for account-request tickets; required for that flow, not an authorization secret. |
+| `CRON_SECRET` | Server-only secret | Bearer token protecting keepalive; use a strong random value. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only secret | Privileged key for keepalive. Never expose it to the browser. |
+| `MAINTENANCE_REQUESTER_ID` | Server-only configuration | Existing requester UUID for maintenance tickets. |
 
-## Deploy on Vercel
+The last three variables are only needed for the keepalive endpoint. Its existing schedule is in `vercel.json`. An authorized request to `/api/cron/supabase-keepalive` reads ticket activity and creates a low-priority maintenance ticket after five days without a new ticket. Calling it can write to the database.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Database and Auth prerequisites
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The migrations are incremental, not a complete initial schema. Obtain a reviewed, sanitized base-schema setup from the maintainer before creating a new development database. The repository does not define:
 
-## Supabase inactivity keepalive
+- Base `profiles`, `tickets`, and `ticket_comments` tables, their original grants, row-level security policies, and supporting constraints.
+- The `request_password_reset` and `ticket_profile_emails` RPCs used by the app.
+- Account/profile provisioning, including `role`, `must_change_password`, and `password_changed_at` profile fields and initial requester accounts.
+- Auth signup, email confirmation, email delivery, site URL, and redirect configuration. Review these for the development origin and `/auth/callback` route.
 
-Free-tier Supabase projects can be paused after a week of low activity. The
-`/api/cron/supabase-keepalive` endpoint performs an external database request
-every day. If no ticket has been created in the last five days, it creates a
-low-priority maintenance ticket so the keepalive is visible in the normal
-support workflow.
+The account-request page inserts tickets directly from the browser, including before sign-in. Its configured requester must exist, and appropriate grants and policies must support that flow. UI role checks alone do not secure data. Confirm access rules and provisioning with the maintainer rather than guessing missing policies.
 
-The daily schedule is declared in `vercel.json` and is enabled when the app is
-deployed to Vercel. Configure these environment variables in the production
-deployment:
+## Database migrations
 
-```text
-CRON_SECRET=<random string at least 16 characters long>
-SUPABASE_SERVICE_ROLE_KEY=<Supabase service_role key>
-MAINTENANCE_REQUESTER_ID=<UUID of the account that owns maintenance tickets>
-```
+After obtaining the base schema, apply these files in order to the development database using the Supabase SQL Editor:
 
-`NEXT_PUBLIC_SUPABASE_URL` is already required by the application and is also
-used by the keepalive endpoint. Never expose `SUPABASE_SERVICE_ROLE_KEY` as a
-`NEXT_PUBLIC_` variable or commit it to the repository.
+1. `supabase/migrations/20260819000000_add_ticket_comment_reads.sql`: read state, unread-count RPC, and ticket-comment Realtime publication.
+2. `supabase/migrations/20260825000000_add_ticket_attachments.sql`: private attachment bucket, metadata, limits, and access policies.
+3. `supabase/migrations/20260826000000_add_ticket_building.sql`: building field, constraint, index, and backfill of existing tickets to the main building.
 
-Vercel sends `CRON_SECRET` to the endpoint as a bearer token. To test a deployed
-endpoint manually:
-
-```bash
-curl -H "Authorization: Bearer $CRON_SECRET" \
-  https://your-domain.example/api/cron/supabase-keepalive
-```
-
-A successful response includes `ticketCreated: false` when recent ticket
-activity exists, or `ticketCreated: true` and the new ticket ID after five quiet
-days. Any scheduler that can send the same authenticated daily GET request can
-be used instead of Vercel Cron.
-
-## Unread ticket replies
-
-The ticket list shows an unread-reply badge to the original requester. Opening
-the ticket marks the current responses as read. The read state is stored in
-Supabase so it follows the user across browsers and devices.
-
-Before deploying this feature, run
-`supabase/migrations/20260819000000_add_ticket_comment_reads.sql` in the
-Supabase SQL Editor. Projects linked through the Supabase CLI can apply it with
-`supabase db push` instead.
-
-## Ticket photo attachments
-
-Requesters and technicians can attach up to five photos while creating or
-working on an active ticket. Photos are compressed in the browser before being
-uploaded to a private Supabase Storage bucket. Requesters, technicians, and
-administrators with access to the ticket can view them; the uploader or a
-technician can delete them.
-
-Run `supabase/migrations/20260825000000_add_ticket_attachments.sql` in the
-Supabase SQL Editor before deploying this feature. The migration creates the
-private bucket, attachment metadata table, five-photo limit, and access
-policies.
+Alternatively, with the Supabase CLI already configured and linked to the intended development project, reconcile its migration history and run `supabase db push` for pending migrations. The CLI and project configuration are not included. Verify the target first: migrations change database state. Some policy statements are not rerunnable, so do not blindly reapply completed migrations.

@@ -101,8 +101,7 @@ export default function LoginPage() {
 
         <h1 id="login-heading">IT Support Login</h1>
         <p className={styles.intro}>
-          Please sign in using your school email and the password provided to
-          you. If you don&apos;t have an account, you can request one below.
+          Please sign in using your school email and password. If you don&apos;t have an account, you can request one below.
         </p>
 
         <form onSubmit={handleSubmit} className={styles.form}>
