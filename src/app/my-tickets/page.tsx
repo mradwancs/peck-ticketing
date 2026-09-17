@@ -110,6 +110,7 @@ export default function MyTicketsPage() {
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [updatingTicketId, setUpdatingTicketId] = useState<string | null>(null);
   const [resolvedOpen, setResolvedOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>("priority");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -437,7 +438,19 @@ export default function MyTicketsPage() {
     {actionNotice ? <div className={styles.notice}>{actionNotice}</div> : null}
 
     <section className={styles.createCard}>
-      <div className={styles.createHeader}><div><h2>Create a ticket</h2><p>Tell the support team what you need help with.</p></div></div>
+      <div className={styles.createHeader}>
+        {isTech ? <h2><button
+          type="button"
+          className={styles.createToggle}
+          onClick={() => setCreateOpen((open) => !open)}
+          aria-expanded={createOpen}
+          aria-controls="create-ticket-form"
+        >
+          <span>Create a ticket</span><span aria-hidden="true">{createOpen ? "−" : "+"}</span>
+        </button></h2> : <h2>Create a ticket</h2>}
+        {!isTech || createOpen ? <p>Tell the support team what you need help with.</p> : null}
+      </div>
+      <div id="create-ticket-form" hidden={isTech && !createOpen}>
       <div className={styles.formGrid}>
         <label className={styles.fullField}><span>Title</span><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Brief summary of the issue" /></label>
         <label className={styles.fullField}><span>Description</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What happened, and what have you already tried?" /></label>
@@ -459,6 +472,7 @@ export default function MyTicketsPage() {
             {creating ? pendingImages.length > 0 ? "Creating and uploading…" : "Creating…" : preparingImages ? "Preparing photos…" : "Submit ticket"}
           </button>
         </div>
+      </div>
       </div>
     </section>
 
